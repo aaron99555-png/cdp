@@ -1,0 +1,2898 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { TrendingUp, TrendingDown, Activity, AlertTriangle, Info, RotateCcw, ArrowUpCircle, ArrowDownCircle, BarChart2, Copy, Check, Search, X, Crosshair, List, BookOpen, Zap } from 'lucide-react';
+
+const CDPAnalyzer = () => {
+  // 初始狀態
+  const [inputs, setInputs] = useState({
+    symbol: '', // 股票代號
+    prevOpen: '', 
+    high: '',
+    low: '',
+    close: '',
+    flatPrice: '', // 今日平盤價
+    open: '' 
+  });
+
+  const [results, setResults] = useState(null);
+  const [strategy, setStrategy] = useState(null);
+  const [volatility, setVolatility] = useState(null);
+  const [limits, setLimits] = useState(null);
+  const [candle, setCandle] = useState(null);
+  const [copied, setCopied] = useState(false); // 複製狀態
+  const [inputError, setInputError] = useState(null); // 輸入錯誤狀態
+  const [showManual, setShowManual] = useState(false); // 顯示說明書
+
+  // 搜尋相關狀態
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchRef = useRef(null);
+
+  // 解析股票資料庫 (只執行一次)
+  const stockList = useMemo(() => {
+    if (!RAW_STOCK_DATA) return [];
+    const lines = RAW_STOCK_DATA.trim().split('\n');
+    const startIndex = lines[0].includes('代號') ? 1 : 0;
+    
+    return lines.slice(startIndex).map(line => {
+      const parts = line.split('\t');
+      if (parts.length >= 2) {
+        return {
+          code: parts[0].trim(),
+          name: parts[1].trim(),
+          industry: parts[2] ? parts[2].trim() : ''
+        };
+      }
+      return null;
+    }).filter(item => item !== null);
+  }, []);
+
+  // 點擊外部關閉建議選單
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchRef.current && !searchRef.current.contains(event.target)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // 處理數值輸入與防呆
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setInputs(prev => {
+        const newInputs = { ...prev, [name]: value };
+        if (newInputs.high && newInputs.low) {
+            if (parseFloat(newInputs.high) < parseFloat(newInputs.low)) {
+                setInputError('最高價不能低於最低價');
+            } else {
+                setInputError(null);
+            }
+        }
+        return newInputs;
+    });
+
+    if (name === 'symbol') {
+      if (value.trim().length > 0) {
+        const searchVal = value.toLowerCase().trim();
+        const filtered = stockList.filter(stock => 
+          stock.code.startsWith(searchVal) || 
+          stock.name.includes(searchVal)
+        ).slice(0, 10);
+        setSuggestions(filtered);
+        setShowSuggestions(true);
+      } else {
+        setSuggestions([]);
+        setShowSuggestions(false);
+      }
+    }
+  };
+
+  const handleSelectStock = (stock) => {
+    setInputs(prev => ({
+      ...prev,
+      symbol: `${stock.code} ${stock.name}`
+    }));
+    setShowSuggestions(false);
+  };
+
+  const handleSymbolKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (suggestions.length > 0) {
+        handleSelectStock(suggestions[0]);
+      } else {
+        setShowSuggestions(false);
+      }
+    }
+  };
+
+  const clearSymbol = () => {
+    setInputs(prev => ({ ...prev, symbol: '' }));
+    setSuggestions([]);
+    setShowSuggestions(false);
+  };
+
+  const handleReset = () => {
+    setInputs({ symbol: '', prevOpen: '', high: '', low: '', close: '', flatPrice: '', open: '' });
+    setResults(null);
+    setStrategy(null);
+    setVolatility(null);
+    setLimits(null);
+    setCandle(null);
+    setCopied(false);
+    setInputError(null);
+    setSuggestions([]);
+  };
+
+  // 複製文字功能
+  const handleCopy = () => {
+    if (!results) return;
+    
+    const symbolText = inputs.symbol ? `【${inputs.symbol}】` : '';
+    const date = new Date().toLocaleDateString();
+    
+    let text = `${symbolText} 萊恩會漲戰法分析 (${date})\n`;
+    text += `昨收:${inputs.close} 昨高:${inputs.high} 昨低:${inputs.low}\n`;
+    if (inputs.flatPrice && inputs.flatPrice !== inputs.close) {
+        text += `平盤:${inputs.flatPrice} (除權息/調整)\n`;
+    }
+    text += `------------------\n`;
+    text += `AH (追買): ${results.ah}\n`;
+    text += `NH (壓力): ${results.nh}\n`;
+    text += `CDP(中軸): ${results.cdp}\n`;
+    text += `NL (支撐): ${results.nl}\n`;
+    text += `AL (追空): ${results.al}\n`;
+    text += `------------------\n`;
+    
+    if (strategy) {
+      text += `今日開盤: ${inputs.open}\n`;
+      text += `萊恩判讀: ${strategy.title}\n`;
+      text += `開盤SOP: ${strategy.sop}\n`;
+      if (strategy.action) text += `操作建議: ${strategy.action}\n`;
+    } else {
+      text += `\n【隔日開盤模擬劇本】\n`;
+      text += `1. 🔴超強勢 (開 > ${results.ah}): 回檔不破 AH/NH 順勢做多\n`;
+      text += `2. 🟠偏強勢 (${results.nh} < 開 ≤ ${results.ah}): 站穩 NH 做多，跌破 NH 短空\n`;
+      text += `3. 🔵震盪盤 (${results.nl} ≤ 開 ≤ ${results.nh}): 區間操作，近 NH 賣，近 NL 買\n`;
+      text += `4. 🟢偏弱勢 (${results.al} ≤ 開 < ${results.nl}): 反彈不過 NL 做空，跌破 AL 追空\n`;
+      text += `5. 🟢超弱勢 (開 < ${results.al}): 反彈不過 AL/NL 順勢做空\n`;
+      text += `\n(請依實際開盤價位，執行對應劇本)\n`;
+    }
+    
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy', err);
+    }
+    document.body.removeChild(textArea);
+  };
+
+  // 核心計算邏輯
+  useEffect(() => {
+    const po = parseFloat(inputs.prevOpen);
+    const h = parseFloat(inputs.high);
+    const l = parseFloat(inputs.low);
+    const c = parseFloat(inputs.close);
+    const refPrice = inputs.flatPrice ? parseFloat(inputs.flatPrice) : c;
+    const o = parseFloat(inputs.open);
+
+    if (h < l) return;
+
+    if (h && l && c) {
+      const limitUpVal = refPrice * 1.10;
+      const limitDownVal = refPrice * 0.90;
+      setLimits({
+        up: limitUpVal.toFixed(2),
+        down: limitDownVal.toFixed(2),
+        flat: refPrice.toFixed(2)
+      });
+
+      if (po) {
+        const isRed = c > po;
+        const isGreen = c < po;
+        const bodySize = Math.abs(c - po);
+        const bodyPercent = (bodySize / po) * 100;
+        
+        let typeText = '十字線';
+        let typeColor = 'text-gray-500 bg-gray-100 border-gray-200';
+        
+        if (isRed) {
+            typeText = '昨日收紅';
+            typeColor = 'text-red-600 bg-red-50 border-red-200';
+        } else if (isGreen) {
+            typeText = '昨日收黑';
+            typeColor = 'text-green-600 bg-green-50 border-green-200';
+        }
+
+        setCandle({
+            text: typeText,
+            color: typeColor,
+            body: bodyPercent.toFixed(2)
+        });
+      } else {
+        setCandle(null);
+      }
+
+      const cdpVal = (h + l + (2 * c)) / 4;
+      const range = h - l; 
+
+      const ah = cdpVal + range;       
+      const nh = (2 * cdpVal) - l;     
+      const nl = (2 * cdpVal) - h;     
+      const al = cdpVal - range;       
+
+      setResults({
+        ah: ah.toFixed(2),
+        nh: nh.toFixed(2),
+        cdp: cdpVal.toFixed(2),
+        nl: nl.toFixed(2),
+        al: al.toFixed(2),
+        range: range.toFixed(2)
+      });
+
+      const volPercent = (range / c) * 100;
+      let volStatus = 'normal';
+      let volText = '波動適中';
+      if (volPercent < 1.5) {
+        volStatus = 'low';
+        volText = '波動過小 (肉少風險高)';
+      } else if (volPercent > 4.5) {
+        volStatus = 'high';
+        volText = '波動劇烈 (請嚴設停損)';
+      }
+      setVolatility({ percent: volPercent.toFixed(2), status: volStatus, text: volText });
+
+      if (o) {
+        let strat = {};
+        if (o >= limitUpVal) {
+             strat = {
+                title: '開盤漲停 (極強)',
+                desc: '開盤即漲停，多頭最強勢表現。',
+                action: '若未鎖死可小量追，若鎖死則排隊或觀望。',
+                sop: '若中途打開爆量不鎖回，多單停利出場；若鎖死則續抱。',
+                color: 'from-pink-500 to-rose-600 text-white',
+                icon: <ArrowUpCircle className="w-8 h-8 text-yellow-300" />
+             }
+        } else if (o <= limitDownVal) {
+             strat = {
+                title: '開盤跌停 (極弱)',
+                desc: '開盤即跌停，空方最強勢表現。',
+                action: '嚴禁接刀，觀察是否打開反彈。',
+                sop: '不做多。若手中有多單，打開時建議停損離場。',
+                color: 'from-emerald-600 to-green-700 text-white',
+                icon: <ArrowDownCircle className="w-8 h-8 text-white" />
+             }
+        } else if (o > ah) {
+          strat = {
+            title: '超強勢盤 (追買)',
+            desc: '跳空突破 AH 壓力，行情極強。',
+            action: '回檔不破 AH/NH 順勢做多，勿放空。',
+            sop: '開盤後等待第一波回測，若不破開盤價或 AH，可進場做多，停損設 AH 下方。',
+            color: 'from-red-600 to-orange-600 text-white shadow-red-200',
+            icon: <TrendingUp className="w-8 h-8 text-white" />
+          };
+        } else if (o > nh && o <= ah) {
+          strat = {
+            title: '偏強勢盤 (觀察)',
+            desc: '開在壓力區間，上方有 AH 壓力。',
+            action: '站穩 NH 做多，跌破 NH 則短空。',
+            sop: '觀察開盤能否站穩 NH，站穩則目標看 AH；若跌破開盤價或 NH，則可能回測 CDP。',
+            color: 'from-orange-400 to-amber-500 text-white',
+            icon: <TrendingUp className="w-8 h-8 text-white" />
+          };
+        } else if (o >= nl && o <= nh) {
+          strat = {
+            title: '震盪盤整 (逆勢)',
+            desc: '開在 CDP 中軸附近，標準盤整。',
+            action: '區間操作：接近 NH 賣，接近 NL 買。',
+            sop: '不追高殺低。等待價格來到 NH 附近出現上影線做空，或來到 NL 附近出現下影線做多。',
+            color: 'from-blue-500 to-indigo-600 text-white',
+            icon: <Activity className="w-8 h-8 text-white" />
+          };
+        } else if (o < nl && o >= al) {
+          strat = {
+            title: '偏弱勢盤 (觀察)',
+            desc: '開在支撐區間，空方力道強。',
+            action: '反彈不過 NL 做空，跌破 AL 追空。',
+            sop: '觀察開盤是否跌破 NL，反彈測試 NL 不過可空；若站上 NL 則暫時觀望，目標看 CDP。',
+            color: 'from-teal-500 to-emerald-600 text-white',
+            icon: <TrendingDown className="w-8 h-8 text-white" />
+          };
+        } else if (o < al) {
+          strat = {
+            title: '超弱勢盤 (追空)',
+            desc: '跳空跌破 AL 支撐，行情極弱。',
+            action: '反彈不過 AL/NL 順勢做空，勿摸底。',
+            sop: '開盤後等待反彈測試 AL，若不過 AL 或開盤價，可進場放空，停損設 AL 上方。',
+            color: 'from-green-700 to-emerald-800 text-white',
+            icon: <TrendingDown className="w-8 h-8 text-white" />
+          };
+        }
+        setStrategy(strat);
+      } else {
+        setStrategy(null);
+      }
+    }
+  }, [inputs]);
+
+  return (
+    <div className="min-h-screen bg-slate-100 p-3 md:p-6 font-sans text-slate-800 relative">
+      <div className="max-w-6xl mx-auto bg-white rounded-3xl shadow-2xl overflow-hidden border border-slate-200">
+        
+        {/* Bold Gradient Header */}
+        <div className="bg-gradient-to-r from-indigo-900 via-purple-900 to-slate-900 text-white p-6 flex flex-col md:flex-row justify-between items-center gap-4 relative overflow-hidden">
+          {/* Decorative Circle */}
+          <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
+          
+          <div className="z-10">
+            <h1 className="text-3xl font-black flex items-center gap-3 tracking-tight">
+              <Zap className="text-yellow-400 fill-yellow-400" size={32} />
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-300">
+                萊恩會漲戰法
+              </span>
+            </h1>
+            <p className="text-slate-300 text-sm mt-1 flex items-center gap-2 font-medium">
+              <span className="px-2 py-0.5 bg-white/10 rounded text-xs border border-white/20">當沖</span>
+              <span className="px-2 py-0.5 bg-white/10 rounded text-xs border border-white/20">隔日沖</span>
+              <span className="text-slate-400">|</span> 
+              精準捕捉轉折點
+            </p>
+          </div>
+          <div className="flex flex-wrap justify-center gap-3 z-10">
+             <button 
+              onClick={() => setShowManual(true)}
+              className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-4 py-2 rounded-xl text-sm font-bold transition-all border border-white/10 backdrop-blur-sm"
+            >
+              <BookOpen size={18} className="text-yellow-400" /> 說明書
+            </button>
+             <button 
+              onClick={handleCopy}
+              disabled={!results}
+              className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 ${
+                !results ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 
+                copied ? 'bg-green-500 text-white' : 'bg-yellow-400 hover:bg-yellow-300 text-slate-900'
+              }`}
+            >
+              {copied ? <Check size={18} /> : <Copy size={18} />}
+              {copied ? '已複製' : '複製分析'}
+            </button>
+            <button 
+              onClick={handleReset}
+              className="flex items-center gap-1 bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-xl text-sm transition-colors text-slate-300"
+            >
+              <RotateCcw size={18} />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">
+          
+          {/* 左側：輸入區 */}
+          <div className="col-span-1 lg:col-span-4 p-6 bg-slate-50 border-r border-slate-200 flex flex-col h-full">
+            
+            {/* 股票代號 */}
+            <div className="mb-6" ref={searchRef}>
+               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Stock Symbol</label>
+               <div className="relative group">
+                 <Search className="absolute left-3 top-3.5 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
+                 <input
+                  type="text"
+                  name="symbol"
+                  value={inputs.symbol}
+                  onChange={handleInputChange}
+                  onKeyDown={handleSymbolKeyDown}
+                  onFocus={() => { if(inputs.symbol) setShowSuggestions(true); }}
+                  placeholder="輸入代號/名稱 (如: 2330)"
+                  autoComplete="off"
+                  className="w-full pl-10 pr-8 py-3 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition font-bold text-slate-800 shadow-sm bg-white"
+                />
+                {inputs.symbol && (
+                  <button 
+                    onClick={clearSymbol}
+                    className="absolute right-2 top-3 text-slate-400 hover:text-slate-600 p-1"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
+
+                {/* 搜尋建議 */}
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto overflow-hidden">
+                    {suggestions.map((stock) => (
+                      <div
+                        key={stock.code}
+                        onClick={() => handleSelectStock(stock)}
+                        className="px-4 py-2.5 hover:bg-indigo-50 cursor-pointer border-b border-slate-50 last:border-0 flex justify-between items-center group"
+                      >
+                        <div>
+                          <span className="font-black text-indigo-600 mr-2">{stock.code}</span>
+                          <span className="text-slate-700 font-medium">{stock.name}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full group-hover:bg-indigo-200 group-hover:text-indigo-700 transition-colors">
+                          {stock.industry}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+               </div>
+            </div>
+
+            <div className="flex items-center gap-2 mb-3">
+              <span className="flex items-center justify-center w-6 h-6 bg-slate-800 text-white rounded-full text-xs font-bold">1</span>
+              <h2 className="font-bold text-slate-700">輸入昨日數據</h2>
+            </div>
+            
+            <div className="space-y-3 flex-1">
+              <div className="grid grid-cols-2 gap-3">
+                 <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">昨日開盤</label>
+                    <input
+                      type="number"
+                      name="prevOpen"
+                      value={inputs.prevOpen}
+                      onChange={handleInputChange}
+                      className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-200 outline-none text-sm font-medium transition-all bg-white hover:border-slate-300"
+                      placeholder="Open"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">昨日收盤</label>
+                    <input
+                      type="number"
+                      name="close"
+                      value={inputs.close}
+                      onChange={handleInputChange}
+                      className="w-full p-3 border-2 border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-200 outline-none text-sm font-bold text-slate-900 transition-all bg-white hover:border-slate-300"
+                      placeholder="Close"
+                    />
+                  </div>
+              </div>
+              
+              {/* 平盤價 */}
+              <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1 flex items-center justify-between">
+                     <span>今日平盤價 (Ref.)</span>
+                     <span className="text-[10px] text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded">若除權息請修改</span>
+                  </label>
+                  <input
+                    type="number"
+                    name="flatPrice"
+                    value={inputs.flatPrice}
+                    onChange={handleInputChange}
+                    className="w-full p-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-200 outline-none text-sm font-bold text-slate-600 bg-slate-100 placeholder:text-slate-400"
+                    placeholder={inputs.close ? `預設: ${inputs.close}` : '同昨收'}
+                  />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">昨日最高</label>
+                    <input
+                      type="number"
+                      name="high"
+                      value={inputs.high}
+                      onChange={handleInputChange}
+                      className={`w-full p-3 border rounded-xl focus:ring-2 outline-none text-red-600 font-bold text-sm transition-all ${inputError ? 'border-red-500 focus:ring-red-200' : 'border-slate-200 focus:ring-red-100'}`}
+                      placeholder="High"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 mb-1">昨日最低</label>
+                    <input
+                      type="number"
+                      name="low"
+                      value={inputs.low}
+                      onChange={handleInputChange}
+                      className={`w-full p-3 border rounded-xl focus:ring-2 outline-none text-green-600 font-bold text-sm transition-all ${inputError ? 'border-red-500 focus:ring-red-200' : 'border-slate-200 focus:ring-green-100'}`}
+                      placeholder="Low"
+                    />
+                  </div>
+              </div>
+              
+              {inputError && (
+                 <div className="text-xs text-red-500 flex items-center gap-1 animate-pulse font-bold bg-red-50 p-2 rounded-lg">
+                    <AlertTriangle size={14} /> {inputError}
+                 </div>
+              )}
+
+              {/* 今日輸入區 (醒目) */}
+              <div className="pt-6 mt-4 border-t border-slate-200">
+                <div className="flex items-center justify-between mb-2">
+                   <div className="flex items-center gap-2">
+                      <span className="flex items-center justify-center w-6 h-6 bg-indigo-600 text-white rounded-full text-xs font-bold">2</span>
+                      <label className="text-sm font-bold text-indigo-900">今日開盤價</label>
+                   </div>
+                   <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold animate-pulse">SOP 觸發</span>
+                </div>
+                <input
+                  type="number"
+                  name="open"
+                  value={inputs.open}
+                  onChange={handleInputChange}
+                  placeholder="輸入今日開盤..."
+                  className="w-full p-4 border-2 border-indigo-200 bg-white text-indigo-900 rounded-xl focus:ring-4 focus:ring-indigo-100 focus:border-indigo-600 outline-none transition font-black text-xl shadow-sm placeholder:text-slate-300"
+                />
+              </div>
+            </div>
+
+            {/* 底部資訊區 */}
+            <div className="mt-6 space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                 {candle && (
+                    <div className={`col-span-3 p-2 rounded-lg text-xs flex items-center justify-center gap-2 border-2 ${candle.color.replace('border-red-200', 'border-red-100').replace('border-green-200', 'border-green-100')}`}>
+                      <BarChart2 size={16} />
+                      <span className="font-bold">{candle.text}</span>
+                      <span className="opacity-75">({candle.body}%)</span>
+                    </div>
+                  )}
+                  {limits && (
+                    <>
+                      <div className="p-2 bg-red-50 text-red-700 border-2 border-red-100 rounded-lg text-center text-xs">
+                         <div className="opacity-60 text-[10px] font-bold mb-0.5">漲停 (+10%)</div>
+                         <div className="font-black text-sm">{limits.up}</div>
+                      </div>
+                      <div className="p-2 bg-slate-100 text-slate-600 border-2 border-slate-200 rounded-lg text-center text-xs">
+                         <div className="opacity-60 text-[10px] font-bold mb-0.5">平盤</div>
+                         <div className="font-black text-sm">{limits.flat}</div>
+                      </div>
+                      <div className="p-2 bg-green-50 text-green-700 border-2 border-green-100 rounded-lg text-center text-xs">
+                         <div className="opacity-60 text-[10px] font-bold mb-0.5">跌停 (-10%)</div>
+                         <div className="font-black text-sm">{limits.down}</div>
+                      </div>
+                    </>
+                  )}
+              </div>
+
+              {volatility && (
+                <div className={`p-3 rounded-xl text-xs flex items-start gap-3 border ${
+                  volatility.status === 'low' ? 'bg-amber-50 text-amber-800 border-amber-200' : 
+                  volatility.status === 'high' ? 'bg-purple-50 text-purple-800 border-purple-200' : 
+                  'bg-white text-slate-500 border-slate-200'
+                }`}>
+                  <Activity size={16} className={`mt-0.5 shrink-0 ${volatility.status === 'high' ? 'text-purple-600' : volatility.status === 'low' ? 'text-amber-500' : 'text-slate-400'}`} />
+                  <div>
+                    <div className="font-bold text-sm">振幅 {volatility.percent}%</div>
+                    <div>{volatility.text}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 右側：顯示區 */}
+          <div className="col-span-1 lg:col-span-8 p-6 bg-white min-h-[500px] flex flex-col">
+            
+            {!results ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-slate-300">
+                <div className="bg-slate-50 p-8 rounded-full mb-6 animate-pulse">
+                    <Activity size={80} className="text-slate-200" />
+                </div>
+                <p className="text-2xl font-bold text-slate-400">等待數據輸入...</p>
+                <p className="text-sm mt-2 text-slate-400">請在左側輸入數據，或點擊上方「說明書」</p>
+              </div>
+            ) : (
+              <div className="space-y-6 h-full">
+                
+                {strategy ? (
+                  // 單一策略模式 - 強化視覺
+                  <div className={`p-6 rounded-2xl shadow-xl bg-gradient-to-br ${strategy.color} text-white relative overflow-hidden group`}>
+                    {/* 背景裝飾 */}
+                    <div className="absolute top-0 right-0 p-4 opacity-10 transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform duration-500">
+                        {strategy.icon}
+                    </div>
+                    
+                    <div className="flex items-start justify-between relative z-10">
+                       <div>
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
+                                {strategy.icon}
+                            </div>
+                            <h3 className="text-2xl font-black tracking-tight drop-shadow-md">{strategy.title}</h3>
+                          </div>
+                          <p className="font-medium opacity-90 mb-4 text-lg">{strategy.desc}</p>
+                       </div>
+                    </div>
+                    {/* SOP 區塊 */}
+                    <div className="space-y-3 relative z-10">
+                      <div className="bg-white/10 backdrop-blur-md p-4 rounded-xl border border-white/20 flex gap-3 items-start shadow-inner">
+                        <Crosshair size={20} className="shrink-0 mt-0.5 text-yellow-300" />
+                        <div>
+                          <span className="font-bold text-yellow-300 uppercase tracking-wider text-xs block mb-1">Action SOP</span>
+                          <span className="font-bold text-white text-base leading-relaxed">{strategy.sop}</span>
+                        </div>
+                      </div>
+                      <div className="text-xs opacity-80 pl-2 flex items-center gap-2">
+                        <Info size={12} />
+                        <span>建議：{strategy.action}</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  // 模擬劇本模式
+                  <ScenarioSimulation results={results} />
+                )}
+
+                {/* 五大關鍵價位表 - 三明治配色法 */}
+                <div className="flex-1 flex flex-col justify-center">
+                  <div className="flex justify-between items-end mb-4 px-1">
+                     <h3 className="font-black text-slate-800 text-xl flex items-center gap-2">
+                        <span className="w-2 h-6 bg-indigo-600 rounded-full"></span>
+                        關鍵價位地圖
+                     </h3>
+                     <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded">※ 請嚴守停損</span>
+                  </div>
+                  
+                  <div className="grid gap-3">
+                    
+                    {/* AH (Top) - Solid Red */}
+                    <LevelRow 
+                      label="AH" 
+                      name="突破追買點" 
+                      value={results.ah} 
+                      variant="top"
+                      isHighlighted={inputs.open && parseFloat(inputs.open) > parseFloat(results.ah)}
+                      limits={limits}
+                    />
+
+                    {/* NH - Light Red Border */}
+                    <LevelRow 
+                      label="NH" 
+                      name="壓力賣出點" 
+                      value={results.nh} 
+                      variant="high"
+                      isHighlighted={inputs.open && parseFloat(inputs.open) > parseFloat(results.nh) && parseFloat(inputs.open) <= parseFloat(results.ah)}
+                      limits={limits}
+                    />
+
+                    {/* CDP (Center) - Dark */}
+                    <LevelRow 
+                      label="CDP" 
+                      name="多空分界線" 
+                      value={results.cdp} 
+                      variant="center"
+                      isHighlighted={false}
+                      limits={limits}
+                    />
+
+                    {/* NL - Light Green Border */}
+                    <LevelRow 
+                      label="NL" 
+                      name="支撐買進點" 
+                      value={results.nl} 
+                      variant="low"
+                      isHighlighted={inputs.open && parseFloat(inputs.open) < parseFloat(results.nh) && parseFloat(inputs.open) >= parseFloat(results.nl)}
+                      limits={limits}
+                    />
+
+                    {/* AL (Bottom) - Solid Green */}
+                    <LevelRow 
+                      label="AL" 
+                      name="跌破追空點" 
+                      value={results.al} 
+                      variant="bottom"
+                      isHighlighted={inputs.open && parseFloat(inputs.open) < parseFloat(results.nl)}
+                      limits={limits}
+                    />
+
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 說明書 Modal */}
+      {showManual && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                <div className="bg-gradient-to-r from-indigo-900 to-purple-900 text-white p-5 flex justify-between items-center">
+                    <h2 className="text-xl font-bold flex items-center gap-2">
+                        <BookOpen size={20} className="text-yellow-400"/>
+                        戰法操作說明書
+                    </h2>
+                    <button onClick={() => setShowManual(false)} className="hover:bg-white/10 p-2 rounded-full transition-colors">
+                        <X size={24} />
+                    </button>
+                </div>
+                
+                <div className="p-8 overflow-y-auto space-y-8">
+                    
+                    <section>
+                        <h3 className="font-black text-indigo-900 mb-3 text-lg flex items-center gap-2">
+                            <span className="bg-indigo-100 text-indigo-600 w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span>
+                            盤前準備
+                        </h3>
+                        <p className="text-slate-600 mb-2 pl-8">輸入目標個股昨日的 <span className="font-bold text-slate-800 bg-slate-100 px-1 rounded">High / Low / Close</span>。</p>
+                        <div className="bg-blue-50 p-4 rounded-xl text-sm text-blue-800 ml-8 border border-blue-100">
+                            💡 系統會自動算出今日的 5 個關鍵價位，這是今天的作戰地圖。
+                        </div>
+                    </section>
+
+                    <section>
+                        <h3 className="font-black text-indigo-900 mb-3 text-lg flex items-center gap-2">
+                            <span className="bg-indigo-100 text-indigo-600 w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span>
+                            認識五大關卡
+                        </h3>
+                        <div className="space-y-2 ml-8 text-sm">
+                            <div className="flex items-center gap-3 p-2 rounded hover:bg-slate-50">
+                                <span className="font-bold bg-red-600 text-white px-2 py-0.5 rounded text-xs w-12 text-center">AH</span>
+                                <span className="text-slate-700"><span className="font-bold text-red-600">最強勢</span>：突破追買，行情極強。</span>
+                            </div>
+                            <div className="flex items-center gap-3 p-2 rounded hover:bg-slate-50">
+                                <span className="font-bold border border-red-500 text-red-600 px-2 py-0.5 rounded text-xs w-12 text-center">NH</span>
+                                <span className="text-slate-700"><span className="font-bold text-red-500">壓力區</span>：當沖多單獲利點，或嘗試短空。</span>
+                            </div>
+                            <div className="flex items-center gap-3 p-2 rounded hover:bg-slate-50">
+                                <span className="font-bold bg-slate-800 text-yellow-400 px-2 py-0.5 rounded text-xs w-12 text-center">CDP</span>
+                                <span className="text-slate-700"><span className="font-bold text-slate-900">多空分界</span>：之上偏多，之下偏空。</span>
+                            </div>
+                            <div className="flex items-center gap-3 p-2 rounded hover:bg-slate-50">
+                                <span className="font-bold border border-green-500 text-green-600 px-2 py-0.5 rounded text-xs w-12 text-center">NL</span>
+                                <span className="text-slate-700"><span className="font-bold text-green-500">支撐區</span>：當沖空單回補點，或嘗試低接。</span>
+                            </div>
+                            <div className="flex items-center gap-3 p-2 rounded hover:bg-slate-50">
+                                <span className="font-bold bg-green-600 text-white px-2 py-0.5 rounded text-xs w-12 text-center">AL</span>
+                                <span className="text-slate-700"><span className="font-bold text-green-600">最弱勢</span>：跌破追空，行情極弱。</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section>
+                        <h3 className="font-black text-indigo-900 mb-3 text-lg flex items-center gap-2">
+                            <span className="bg-indigo-100 text-indigo-600 w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span>
+                            盤中應戰
+                        </h3>
+                        <p className="text-slate-600 mb-3 pl-8">
+                            輸入 <span className="font-bold text-indigo-600">「今日開盤價」</span>，系統自動判斷策略：
+                        </p>
+                        <div className="grid grid-cols-2 gap-3 ml-8 text-sm">
+                             <div className="bg-gradient-to-br from-red-50 to-white p-3 rounded-xl border border-red-100 shadow-sm">
+                                <div className="font-bold text-red-700 mb-1">🔴 超強勢 (開 {'>'} AH)</div>
+                                <div className="text-xs text-slate-500">順勢追多，拉回不破 AH 上車。</div>
+                             </div>
+                             <div className="bg-gradient-to-br from-blue-50 to-white p-3 rounded-xl border border-blue-100 shadow-sm">
+                                <div className="font-bold text-blue-700 mb-1">🔵 震盪盤 (NL ~ NH)</div>
+                                <div className="text-xs text-slate-500">逆勢操作，高出低進。</div>
+                             </div>
+                             <div className="bg-gradient-to-br from-green-50 to-white p-3 rounded-xl border border-green-100 shadow-sm">
+                                <div className="font-bold text-green-700 mb-1">🟢 超弱勢 (開 {'<'} AL)</div>
+                                <div className="text-xs text-slate-500">順勢追空，反彈不過 AL 下車。</div>
+                             </div>
+                        </div>
+                    </section>
+                </div>
+                
+                <div className="bg-slate-50 p-5 border-t border-slate-200 flex justify-end">
+                    <button 
+                        onClick={() => setShowManual(false)}
+                        className="bg-indigo-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-indigo-800 transition-colors shadow-lg shadow-indigo-200"
+                    >
+                        我學會了
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// 新增組件：盤前情境模擬列表
+const ScenarioSimulation = ({ results }) => {
+  const [copied, setCopied] = useState(false);
+  if (!results) return null;
+
+  const handleCopyScenarios = () => {
+    let text = `【隔日開盤模擬劇本】\n`;
+    text += `1. 🔴超強勢 (開 > ${results.ah}): 回檔不破 AH/NH 順勢做多\n`;
+    text += `2. 🟠偏強勢 (${results.nh} < 開 ≤ ${results.ah}): 站穩 NH 做多，跌破 NH 短空\n`;
+    text += `3. 🔵震盪盤 (${results.nl} ≤ 開 ≤ ${results.nh}): 區間操作，近 NH 賣，近 NL 買\n`;
+    text += `4. 🟢偏弱勢 (${results.al} ≤ 開 < ${results.nl}): 反彈不過 NL 做空，跌破 AL 追空\n`;
+    text += `5. 🟢超弱勢 (開 < ${results.al}): 反彈不過 AL/NL 順勢做空\n`;
+
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy', err);
+    }
+    document.body.removeChild(textArea);
+  };
+
+  const scenarios = [
+    {
+      condition: `開盤 > ${results.ah}`,
+      title: '超強勢 (追買)',
+      action: '回檔不破 AH/NH 順勢做多',
+      bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', icon: '🔴'
+    },
+    {
+      condition: `${results.nh} < 開盤 ≤ ${results.ah}`,
+      title: '偏強勢 (觀察)',
+      action: '站穩 NH 做多，跌破 NH 短空',
+      bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', icon: '🟠'
+    },
+    {
+      condition: `${results.nl} ≤ 開盤 ≤ ${results.nh}`,
+      title: '震盪盤整 (逆勢)',
+      action: '區間操作：近 NH 賣，近 NL 買',
+      bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', icon: '🔵'
+    },
+    {
+      condition: `${results.al} ≤ 開盤 < ${results.nl}`,
+      title: '偏弱勢 (觀察)',
+      action: '反彈不過 NL 做空，跌破 AL 追空',
+      bg: 'bg-teal-50', border: 'border-teal-200', text: 'text-teal-700', icon: '🟢'
+    },
+    {
+      condition: `開盤 < ${results.al}`,
+      title: '超弱勢 (追空)',
+      action: '反彈不過 AL/NL 順勢做空',
+      bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-800', icon: '🟢'
+    }
+  ];
+
+  return (
+    <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 h-full flex flex-col">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2 text-slate-700">
+          <List size={20} className="text-indigo-600" />
+          <h3 className="font-bold text-lg">盤前模擬劇本</h3>
+        </div>
+        <button 
+          onClick={handleCopyScenarios}
+          className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg transition-all font-bold ${
+            copied ? 'bg-green-100 text-green-700' : 'bg-white border border-slate-300 text-slate-500 hover:text-indigo-600 hover:border-indigo-300'
+          }`}
+        >
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+          {copied ? '已複製' : '複製劇本'}
+        </button>
+      </div>
+      
+      <div className="flex-1 flex flex-col gap-2 justify-center">
+        {scenarios.map((s, idx) => (
+          <div key={idx} className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-sm transition-transform hover:scale-[1.01] ${s.bg} ${s.border}`}>
+            <div className={`font-bold font-mono sm:w-1/3 flex items-center gap-2 text-xs ${s.text}`}>
+              <span className="text-base">{s.icon}</span>
+              {s.condition}
+            </div>
+            <div className={`font-black sm:w-1/4 text-sm uppercase tracking-wider ${s.text}`}>{s.title}</div>
+            <div className="text-xs sm:w-1/3 sm:text-right font-medium opacity-80">{s.action}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 text-xs text-center text-slate-400 font-medium">
+        ※ 盤中請依實際開盤價位，執行上方對應劇本
+      </div>
+    </div>
+  );
+};
+
+// 子組件：三明治配色風格的價位列
+const LevelRow = ({ label, name, value, variant, isHighlighted, limits }) => {
+  const numValue = parseFloat(value);
+  const limitUp = limits ? parseFloat(limits.up) : Infinity;
+  const limitDown = limits ? parseFloat(limits.down) : -Infinity;
+  
+  let warning = null;
+  if (numValue > limitUp) {
+    warning = (
+      <span className="ml-2 text-[10px] bg-white text-red-600 px-1.5 py-0.5 rounded flex items-center gap-1 font-bold shadow-sm">
+        ⚠️ 超漲停
+      </span>
+    );
+  } else if (numValue < limitDown) {
+    warning = (
+      <span className="ml-2 text-[10px] bg-white text-green-700 px-1.5 py-0.5 rounded flex items-center gap-1 font-bold shadow-sm">
+        ⚠️ 破跌停
+      </span>
+    );
+  }
+
+  // 配色變體
+  const styles = {
+    top: 'bg-red-600 text-white border-transparent shadow-md z-10', // AH
+    high: 'bg-white text-red-700 border-2 border-red-100 hover:border-red-300', // NH
+    center: 'bg-slate-800 text-yellow-400 border-4 border-slate-800 shadow-xl z-20 scale-[1.02]', // CDP
+    low: 'bg-white text-green-700 border-2 border-green-100 hover:border-green-300', // NL
+    bottom: 'bg-green-600 text-white border-transparent shadow-md z-10' // AL
+  };
+
+  const currentStyle = styles[variant] || styles.high;
+
+  return (
+    <div className={`flex items-center p-3 sm:p-4 rounded-xl transition-all duration-300 ${currentStyle} ${isHighlighted ? 'ring-4 ring-yellow-400 scale-[1.03] z-30 shadow-2xl' : ''}`}>
+      <div className="w-12 sm:w-16 font-black text-xl sm:text-2xl opacity-90 tracking-tighter">{label}</div>
+      <div className="flex-1 min-w-0 pr-2">
+        <div className="font-bold text-sm sm:text-base flex items-center truncate">
+          {name}
+        </div>
+      </div>
+      <div className="flex flex-col items-end shrink-0">
+        <div className="text-xl sm:text-3xl font-mono font-black tracking-tight flex items-center">
+          {value}
+        </div>
+        {warning}
+      </div>
+      
+      {isHighlighted && (
+        <div className="absolute -left-3 top-1/2 transform -translate-y-1/2">
+            <span className="flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-500"></span>
+            </span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const RAW_STOCK_DATA = `代號	名稱	產別
+1101	台泥	水泥
+1102	亞泥	水泥
+1103	嘉泥	水泥
+1104	環泥	水泥
+1108	幸福	水泥
+1109	信大	水泥
+1110	東泥	水泥
+1201	味全	食品
+1203	味王	食品
+1210	大成	食品
+1213	大飲	食品
+1215	卜蜂	食品
+1216	統一	食品
+1217	愛之味	食品
+1218	泰山	食品
+1219	福壽	食品
+1220	台榮	食品
+1225	福懋油	食品
+1227	佳格	食品
+1229	聯華	食品
+1231	聯華食	食品
+1232	大統益	食品
+1233	天仁	食品
+1234	黑松	食品
+1235	興泰	食品
+1236	宏亞	食品
+1240	茂生農經	農業科技
+1256	鮮活果汁-KY	食品
+1259	安心	觀光餐旅
+1264	德麥	食品
+1268	漢來美食	觀光餐旅
+1294	漢田生技	食品
+1295	生合	食品
+1301	台塑	塑膠
+1303	南亞	塑膠
+1304	台聚	塑膠
+1305	華夏	塑膠
+1307	三芳	塑膠
+1308	亞聚	塑膠
+1309	台達化	塑膠
+1310	台苯	塑膠
+1312	國喬	塑膠
+1313	聯成	塑膠
+1314	中石化	塑膠
+1315	達新	塑膠
+1316	上曜	建材營造
+1319	東陽	汽車
+1321	大洋	塑膠
+1323	永裕	塑膠
+1324	地球	塑膠
+1325	恆大	塑膠
+1326	台化	塑膠
+1336	台翰	電子零件
+1337	再生-KY	塑膠
+1338	廣華-KY	汽車
+1339	昭輝	汽車
+1340	勝悅-KY	塑膠
+1341	富林-KY	塑膠
+1342	八貫	其他
+1402	遠東新	紡織纖維
+1409	新纖	紡織纖維
+1410	南染	紡織纖維
+1413	宏洲	紡織纖維
+1414	東和	紡織纖維
+1416	廣豐	其他
+1417	嘉裕	紡織纖維
+1418	東華	紡織纖維
+1419	新紡	紡織纖維
+1423	利華	紡織纖維
+1432	大魯閣	運動休閒
+1434	福懋	紡織纖維
+1435	中福	其他
+1436	華友聯	建材營造
+1437	勤益控	其他
+1438	三地開發	建材營造
+1439	雋揚	建材營造
+1440	南紡	紡織纖維
+1441	大東	紡織纖維
+1442	名軒	建材營造
+1443	立益物流	其他
+1444	力麗	紡織纖維
+1445	大宇	紡織纖維
+1446	宏和	紡織纖維
+1447	力鵬	紡織纖維
+1449	佳和	紡織纖維
+1451	年興	紡織纖維
+1452	宏益	紡織纖維
+1453	大將	建材營造
+1454	台富	紡織纖維
+1455	集盛	紡織纖維
+1456	怡華	建材營造
+1457	宜進	紡織纖維
+1459	聯發	紡織纖維
+1460	宏遠	紡織纖維
+1463	強盛新	紡織纖維
+1464	得力	紡織纖維
+1465	偉全	紡織纖維
+1466	聚隆	紡織纖維
+1467	南緯	紡織纖維
+1468	昶和	紡織纖維
+1470	大統新創	紡織纖維
+1471	首利	電子零件
+1472	三洋實業	建材營造
+1473	台南	紡織纖維
+1474	弘裕	紡織纖維
+1475	業旺	紡織纖維
+1476	儒鴻	紡織纖維
+1477	聚陽	紡織纖維
+1503	士電	電機機械
+1504	東元	電機機械
+1506	正道	電機機械
+1512	瑞利	汽車
+1513	中興電	電機機械
+1514	亞力	電機機械
+1515	力山	電機機械
+1516	川飛	其他
+1517	利奇	電機機械
+1519	華城	電機機械
+1521	大億	汽車
+1522	堤維西	汽車
+1524	耿鼎	汽車
+1525	江申	汽車
+1526	日馳	電機機械
+1527	鑽全	電機機械
+1528	恩德	電機機械
+1529	樂事綠能	電機機械
+1530	亞崴	電機機械
+1531	高林股	電機機械
+1532	勤美	電機機械
+1533	車王電	汽車
+1535	中宇	電機機械
+1536	和大	汽車
+1537	廣隆	電機機械
+1538	正峰	電機機械
+1539	巨庭	電機機械
+1540	喬福	電機機械
+1541	錩泰	電機機械
+1558	伸興	電機機械
+1560	中砂	電機機械
+1563	巧新	汽車
+1565	精華	生技醫療
+1568	倉佑	汽車
+1569	濱川	電腦週邊
+1570	力肯	電機機械
+1580	新麥	電機機械
+1582	信錦	電子零件
+1583	程泰	電機機械
+1584	精剛	其他
+1586	和勤	電機機械
+1587	吉茂	汽車
+1589	永冠-KY	電機機械
+1590	亞德客-KY	電機機械
+1591	駿吉-KY	電機機械
+1593	祺驊	運動休閒
+1595	川寶	電子零件
+1597	直得	電機機械
+1598	岱宇	運動休閒
+1599	宏佳騰	電機機械
+1603	華電	電器電纜
+1604	聲寶	電器電纜
+1605	華新	電器電纜
+1608	華榮	電器電纜
+1609	大亞	電器電纜
+1611	中電	電器電纜
+1612	宏泰	電器電纜
+1614	三洋電	電器電纜
+1615	大山	電器電纜
+1616	億泰	電器電纜
+1617	榮星	電器電纜
+1618	合機	電器電纜
+1626	艾美特-KY	電器電纜
+1702	南僑	食品
+1707	葡萄王	生技醫療
+1708	東鹼	化學
+1709	和益	化學
+1710	東聯	化學
+1711	永光	化學
+1712	興農	化學
+1713	國化	化學
+1714	和桐	化學
+1717	長興	化學
+1718	中纖	化學
+1720	生達	生技醫療
+1721	三晃	化學
+1722	台肥	化學
+1723	中碳	化學
+1725	元禎	化學
+1726	永記	化學
+1727	中華化	化學
+1730	花仙子	化學
+1731	美吾華	生技醫療
+1732	毛寶	化學
+1733	五鼎	生技醫療
+1734	杏輝	生技醫療
+1735	日勝化	化學
+1736	喬山	運動休閒
+1737	臺鹽	食品
+1742	台蠟	化學
+1752	南光	生技醫療
+1760	寶齡富錦	生技醫療
+1762	中化生	生技醫療
+1773	勝一	化學
+1776	展宇	化學
+1777	生泰	生技醫療
+1781	合世	生技醫療
+1783	和康生	生技醫療
+1784	訊聯	生技醫療
+1785	光洋科	其他電子
+1786	科妍	生技醫療
+1788	杏昌	生技醫療
+1789	神隆	生技醫療
+1795	美時	生技醫療
+1796	金穎生技	食品
+1799	易威	生技醫療
+1802	台玻	玻璃陶瓷
+1805	寶徠	建材營造
+1806	冠軍	玻璃陶瓷
+1808	潤隆	建材營造
+1809	中釉	玻璃陶瓷
+1810	和成	玻璃陶瓷
+1813	寶利徠	生技醫療
+1815	富喬	電子零件
+1817	凱撒衛	玻璃陶瓷
+1903	士紙	造紙
+1904	正隆	造紙
+1905	華紙	造紙
+1906	寶隆	造紙
+1907	永豐餘	造紙
+1909	榮成	造紙
+2002	中鋼	鋼鐵
+2006	東和鋼鐵	鋼鐵
+2007	燁興	鋼鐵
+2008	高興昌	鋼鐵
+2009	第一銅	鋼鐵
+2010	春源	鋼鐵
+2012	春雨	鋼鐵
+2013	中鋼構	鋼鐵
+2014	中鴻	鋼鐵
+2015	豐興	鋼鐵
+2017	官田鋼	鋼鐵
+2020	美亞	鋼鐵
+2022	聚亨	鋼鐵
+2023	燁輝	鋼鐵
+2024	志聯	鋼鐵
+2025	千興	鋼鐵
+2027	大成鋼	鋼鐵
+2028	威致	鋼鐵
+2029	盛餘	鋼鐵
+2030	彰源	鋼鐵
+2031	新光鋼	鋼鐵
+2032	新鋼	鋼鐵
+2033	佳大	鋼鐵
+2034	允強	鋼鐵
+2035	唐榮公司	鋼鐵
+2038	海光	鋼鐵
+2049	上銀	電機機械
+2059	川湖	電子零件
+2061	風青	電器電纜
+2062	橋椿	居家生活
+2063	世鎧精密	鋼鐵
+2064	晉椿	鋼鐵
+2065	世豐	鋼鐵
+2066	世德	電機機械
+2067	嘉鋼	電機機械
+2069	運錩	鋼鐵
+2070	精湛	電機機械
+2073	雄順	鋼鐵
+2101	南港	橡膠
+2102	泰豐	橡膠
+2103	台橡	橡膠
+2104	國際中橡	橡膠
+2105	正新	橡膠
+2106	建大	橡膠
+2107	厚生	橡膠
+2108	南帝	橡膠
+2109	華豐	橡膠
+2114	鑫永銓	橡膠
+2115	六暉-KY	汽車
+2201	裕隆	汽車
+2204	中華	汽車
+2206	三陽工業	汽車
+2207	和泰車	汽車
+2208	台船	航運
+2211	長榮鋼	鋼鐵
+2221	大甲	其他
+2227	裕日車	汽車
+2228	劍麟	汽車
+2230	泰茂	電機機械
+2231	為升	汽車
+2233	宇隆	汽車
+2235	謚源	電機機械
+2236	百達-KY	汽車
+2239	英利-KY	汽車
+2241	艾姆勒	汽車
+2243	宏旭-KY	汽車
+2247	汎德永業	汽車
+2248	華勝-KY	汽車
+2250	IKKA-KY	汽車
+2254	巨鎧精密-創	汽車
+2258	鴻華先進-創	汽車
+2301	光寶科	電腦週邊
+2302	麗正	半導體
+2303	聯電	半導體
+2305	全友	電腦週邊
+2308	台達電	電子零件
+2312	金寶	其他電子
+2313	華通	電子零件
+2314	台揚	通信網路
+2316	楠梓電	電子零件
+2317	鴻海	其他電子
+2321	東訊	通信網路
+2323	中環	光電
+2324	仁寶	電腦週邊
+2327	國巨*	電子零件
+2328	廣宇	電子零件
+2329	華泰	半導體
+2330	台積電	半導體
+2331	精英	電腦週邊
+2332	友訊	通信網路
+2337	旺宏	半導體
+2338	光罩	半導體
+2340	台亞	半導體
+2342	茂矽	半導體
+2344	華邦電	半導體
+2345	智邦	通信網路
+2347	聯強	電子通路
+2348	海悅	其他
+2349	錸德	光電
+2351	順德	半導體
+2352	佳世達	電腦週邊
+2353	宏碁	電腦週邊
+2354	鴻準	其他電子
+2355	敬鵬	電子零件
+2356	英業達	電腦週邊
+2357	華碩	電腦週邊
+2359	所羅門	其他電子
+2360	致茂	其他電子
+2362	藍天	電腦週邊
+2363	矽統	半導體
+2364	倫飛	電腦週邊
+2365	昆盈	電腦週邊
+2367	燿華	電子零件
+2368	金像電	電子零件
+2369	菱生	半導體
+2371	大同	電機機械
+2373	震旦行	其他電子
+2374	佳能	光電
+2375	凱美	電子零件
+2376	技嘉	電腦週邊
+2377	微星	電腦週邊
+2379	瑞昱	半導體
+2380	虹光	電腦週邊
+2382	廣達	電腦週邊
+2383	台光電	電子零件
+2385	群光	電子零件
+2387	精元	電腦週邊
+2388	威盛	半導體
+2390	云辰	其他電子
+2392	正崴	電子零件
+2393	億光	光電
+2395	研華	電腦週邊
+2397	友通	電腦週邊
+2399	映泰	電腦週邊
+2401	凌陽	半導體
+2402	毅嘉	電子零件
+2404	漢唐	其他電子
+2405	輔信	電腦週邊
+2406	國碩	光電
+2408	南亞科	半導體
+2409	友達	光電
+2412	中華電	通信網路
+2413	環科	電子零件
+2414	精技	電子通路
+2415	錩新	電子零件
+2417	圓剛	電腦週邊
+2419	仲琦	通信網路
+2420	新巨	電子零件
+2421	建準	電子零件
+2423	固緯	其他電子
+2424	隴華	通信網路
+2425	承啟	電腦週邊
+2426	鼎元	光電
+2427	三商電	資訊服務
+2428	興勤	電子零件
+2429	銘旺科	光電
+2430	燦坤	電子通路
+2431	聯昌	電子零件
+2432	倚天酷碁-創	電腦週邊
+2433	互盛電	其他電子
+2434	統懋	半導體
+2436	偉詮電	半導體
+2438	翔耀	光電
+2439	美律	通信網路
+2440	太空梭	電子零件
+2441	超豐	半導體
+2442	新美齊	建材營造
+2444	兆勁	通信網路
+2449	京元電子	半導體
+2450	神腦	通信網路
+2451	創見	半導體
+2453	凌群	資訊服務
+2454	聯發科	半導體
+2455	全新	通信網路
+2457	飛宏	電子零件
+2458	義隆	半導體
+2459	敦吉	其他電子
+2460	建通	電子零件
+2461	光群雷	其他電子
+2462	良得電	電子零件
+2464	盟立	其他電子
+2465	麗臺	電腦週邊
+2466	冠西電	光電
+2467	志聖	電子零件
+2468	華經	資訊服務
+2471	資通	資訊服務
+2472	立隆電	電子零件
+2474	可成	其他電子
+2476	鉅祥	電子零件
+2477	美隆電	其他電子
+2478	大毅	電子零件
+2480	敦陽科	資訊服務
+2481	強茂	半導體
+2482	連宇	其他電子
+2483	百容	電子零件
+2484	希華	電子零件
+2485	兆赫	通信網路
+2486	一詮	光電
+2488	漢平	其他電子
+2489	瑞軒	光電
+2491	吉祥全	光電
+2492	華新科	電子零件
+2493	揚博	電子零件
+2495	普安	電腦週邊
+2496	卓越	其他
+2497	怡利電	汽車
+2498	宏達電	通信網路
+2501	國建	建材營造
+2504	國產	建材營造
+2505	國揚	建材營造
+2506	太設	建材營造
+2509	全坤建	建材營造
+2511	太子	建材營造
+2514	龍邦	其他
+2515	中工	建材營造
+2516	新建	建材營造
+2520	冠德	建材營造
+2524	京城	建材營造
+2527	宏璟	建材營造
+2528	皇普	建材營造
+2530	華建	建材營造
+2534	宏盛	建材營造
+2535	達欣工	建材營造
+2536	宏普	建材營造
+2537	聯上發	建材營造
+2538	基泰	建材營造
+2539	櫻花建	建材營造
+2540	愛山林	建材營造
+2542	興富發	建材營造
+2543	皇昌	建材營造
+2545	皇翔	建材營造
+2546	根基	建材營造
+2547	日勝生	建材營造
+2548	華固	建材營造
+2596	綠意	建材營造
+2597	潤弘	建材營造
+2601	益航	貿易百貨
+2603	長榮	航運
+2605	新興	航運
+2606	裕民	航運
+2607	榮運	航運
+2608	嘉里大榮	航運
+2609	陽明	航運
+2610	華航	航運
+2611	志信	航運
+2612	中航	航運
+2613	中櫃	航運
+2614	東森	其他
+2615	萬海	航運
+2616	山隆	油電燃氣
+2617	台航	航運
+2618	長榮航	航運
+2630	亞航	航運
+2633	台灣高鐵	航運
+2634	漢翔	航運
+2636	台驊控股	航運
+2637	慧洋-KY	航運
+2640	大車隊	數位雲端
+2641	正德	航運
+2642	宅配通	航運
+2643	捷迅	航運
+2645	長榮航太	航運
+2646	星宇航空	航運
+2701	萬企	觀光餐旅
+2702	華園	觀光餐旅
+2704	國賓	觀光餐旅
+2705	六福	觀光餐旅
+2706	第一店	觀光餐旅
+2707	晶華	觀光餐旅
+2712	遠雄來	觀光餐旅
+2718	全心投控	建材營造
+2719	燦星旅	觀光餐旅
+2722	夏都	觀光餐旅
+2723	美食-KY	觀光餐旅
+2724	藝舍-KY	其他
+2726	雅茗-KY	觀光餐旅
+2727	王品	觀光餐旅
+2729	瓦城	觀光餐旅
+2731	雄獅	觀光餐旅
+2732	六角	觀光餐旅
+2734	易飛網	觀光餐旅
+2736	富野	觀光餐旅
+2739	寒舍	觀光餐旅
+2740	天蔥	觀光餐旅
+2743	山富	觀光餐旅
+2745	五福	觀光餐旅
+2748	雲品	觀光餐旅
+2751	王座	觀光餐旅
+2752	豆府	觀光餐旅
+2753	八方雲集	觀光餐旅
+2754	亞洲藏壽司	觀光餐旅
+2755	揚秦	觀光餐旅
+2756	聯發國際	觀光餐旅
+2762	世界健身-KY	運動休閒
+2801	彰銀	金融保險
+2812	台中銀	金融保險
+2816	旺旺保	金融保險
+2820	華票	金融保險
+2832	台產	金融保險
+2834	臺企銀	金融保險
+2836	高雄銀	金融保險
+2838	聯邦銀	金融保險
+2845	遠東銀	金融保險
+2849	安泰銀	金融保險
+2850	新產	金融保險
+2851	中再保	金融保險
+2852	第一保	金融保險
+2855	統一證	金融保險
+2867	三商壽	金融保險
+2880	華南金	金融保險
+2881	富邦金	金融保險
+2882	國泰金	金融保險
+2883	凱基金	金融保險
+2884	玉山金	金融保險
+2885	元大金	金融保險
+2886	兆豐金	金融保險
+2887	台新新光金	金融保險
+2889	國票金	金融保險
+2890	永豐金	金融保險
+2891	中信金	金融保險
+2892	第一金	金融保險
+2897	王道銀行	金融保險
+2901	欣欣	貿易百貨
+2903	遠百	貿易百貨
+2904	匯僑	其他
+2905	三商	貿易百貨
+2906	高林	貿易百貨
+2908	特力	貿易百貨
+2910	統領	貿易百貨
+2911	麗嬰房	貿易百貨
+2912	統一超	貿易百貨
+2913	農林	貿易百貨
+2915	潤泰全	貿易百貨
+2916	滿心	居家生活
+2923	鼎固-KY	建材營造
+2924	宏太-KY	居家生活
+2926	誠品生活	文化創意
+2929	淘帝-KY	貿易百貨
+2937	集雅社	居家生活
+2939	永邑-KY	貿易百貨
+2941	米斯特	居家生活
+2945	三商家購	貿易百貨
+2947	振宇五金	居家生活
+2948	寶陞	居家生活
+2949	欣新網	數位雲端
+3002	歐格	電腦週邊
+3003	健和興	電子零件
+3004	豐達科	鋼鐵
+3005	神基	電腦週邊
+3006	晶豪科	半導體
+3008	大立光	光電
+3010	華立	電子通路
+3011	今皓	電子零件
+3013	晟銘電	電腦週邊
+3014	聯陽	半導體
+3015	全漢	電子零件
+3016	嘉晶	半導體
+3017	奇鋐	電腦週邊
+3018	隆銘綠能	其他電子
+3019	亞光	光電
+3021	鴻名	電子零件
+3022	威強電	電腦週邊
+3023	信邦	電子零件
+3024	憶聲	光電
+3025	星通	通信網路
+3026	禾伸堂	電子零件
+3027	盛達	通信網路
+3028	增你強	電子通路
+3029	零壹	資訊服務
+3030	德律	其他電子
+3031	佰鴻	光電
+3032	偉訓	電子零件
+3033	威健	電子通路
+3034	聯詠	半導體
+3035	智原	半導體
+3036	文曄	電子通路
+3037	欣興	電子零件
+3038	全台	光電
+3040	遠見	其他
+3041	揚智	半導體
+3042	晶技	電子零件
+3043	科風	其他電子
+3044	健鼎	電子零件
+3045	台灣大	通信網路
+3046	建碁	電腦週邊
+3047	訊舟	通信網路
+3048	益登	電子通路
+3049	精金	光電
+3050	鈺德	光電
+3051	力特	光電
+3052	夆典	建材營造
+3054	立萬利	食品
+3055	蔚華科	電子通路
+3056	富華新	建材營造
+3057	喬鼎	電腦週邊
+3058	立德	電子零件
+3059	華晶科	光電
+3060	銘異	電腦週邊
+3062	建漢	通信網路
+3064	泰偉	文化創意
+3066	李洲	光電
+3067	全域	其他電子
+3071	協禧	電腦週邊
+3073	天方能源	綠能環保
+3078	僑威	電子零件
+3081	聯亞	通信網路
+3083	網龍	文化創意
+3085	新零售	數位雲端
+3086	華義	文化創意
+3088	艾訊	電腦週邊
+3090	日電貿	電子零件
+3092	鴻碩	電子零件
+3093	港建*	其他電子
+3094	聯傑	半導體
+3095	及成	通信網路
+3105	穩懋	半導體
+3114	好德	電子零件
+3115	富榮綱	電子零件
+3118	進階	生技醫療
+3122	笙泉	半導體
+3128	昇銳	光電
+3130	一零四	數位雲端
+3131	弘塑	其他電子
+3135	凌航	半導體
+3138	耀登	通信網路
+3141	晶宏	半導體
+3147	大綜	資訊服務
+3149	正達	光電
+3150	鈺寶-創	半導體
+3152	璟德	通信網路
+3158	嘉實	資訊服務
+3162	精確	電機機械
+3163	波若威	通信網路
+3164	景岳	生技醫療
+3167	大量	電機機械
+3168	眾福科	光電
+3169	亞信	半導體
+3171	炎洲流通	居家生活
+3176	基亞	生技醫療
+3178	公準	半導體
+3188	鑫龍騰	建材營造
+3189	景碩	半導體
+3191	雲嘉南	電子零件
+3205	佰研	生技醫療
+3206	志豐	電子零件
+3207	耀勝	電子零件
+3209	全科	電子通路
+3211	順達	電腦週邊
+3213	茂訊	電腦週邊
+3217	優群	電子零件
+3218	大學光	生技醫療
+3219	倚強科	其他電子
+3221	台嘉碩	通信網路
+3224	三顧	電子通路
+3226	龍鋒	電機機械
+3227	原相	半導體
+3228	金麗科	半導體
+3229	晟鈦	電子零件
+3230	錦明	光電
+3231	緯創	電腦週邊
+3232	昱捷	電子通路
+3234	光環	通信網路
+3236	千如	電子零件
+3252	海灣	觀光餐旅
+3257	虹冠電	半導體
+3259	鑫創	半導體
+3260	威剛	半導體
+3264	欣銓	半導體
+3265	台星科	半導體
+3266	昇陽	建材營造
+3268	海德威	半導體
+3272	東碩	電腦週邊
+3276	宇環	電子零件
+3284	太普高	其他
+3285	微端	其他電子
+3287	廣寰科	電腦週邊
+3288	點晶	電子零件
+3289	宜特	其他電子
+3290	東浦	電子零件
+3293	鈊象	文化創意
+3294	英濟	電子零件
+3296	勝德	電子零件
+3297	杭特	光電
+3303	岱稜	其他電子
+3305	昇貿	其他電子
+3306	鼎天	通信網路
+3308	聯德	電子零件
+3310	佳穎	電子零件
+3311	閎暉	通信網路
+3312	弘憶股	電子通路
+3313	斐成	其他
+3317	尼克森	半導體
+3321	同泰	電子零件
+3322	建舜電	電子零件
+3323	加百裕	電腦週邊
+3324	雙鴻	其他電子
+3325	旭品	電腦週邊
+3332	幸康	電子零件
+3338	泰碩	電子零件
+3339	泰谷	光電
+3346	麗清	汽車
+3349	寶德	電腦週邊
+3354	律勝	電子零件
+3356	奇偶	光電
+3357	臺慶科	電子零件
+3360	尚立	電子通路
+3362	先進光	光電
+3363	上詮	通信網路
+3372	典範	半導體
+3373	熱映	其他電子
+3374	精材	半導體
+3376	新日興	電子零件
+3379	彬台	電機機械
+3380	明泰	通信網路
+3388	崇越電	電子零件
+3390	旭軟	電子零件
+3402	漢科	其他電子
+3406	玉晶光	光電
+3413	京鼎	半導體
+3416	融程電	電腦週邊
+3419	譁裕	通信網路
+3426	台興	電機機械
+3430	奇鈦科	化學
+3432	台端	電子零件
+3434	哲固	光電
+3437	榮創	光電
+3438	類比科	半導體
+3441	聯一光電	光電
+3443	創意	半導體
+3444	利機	電子通路
+3447	展達	通信網路
+3450	聯鈞	半導體
+3454	晶睿	光電
+3455	由田	光電
+3465	進泰電子	其他電子
+3466	德晉	通信網路
+3467	台灣精材	半導體
+3479	安勤	電腦週邊
+3481	群創	光電
+3483	力致	電腦週邊
+3484	崧騰	電子零件
+3489	森寶	建材營造
+3490	單井	光電
+3491	昇達科	通信網路
+3492	長盛	電子零件
+3494	誠研	電腦週邊
+3498	陽程	其他電子
+3499	環天科	通信網路
+3501	維熹	電子零件
+3504	揚明光	光電
+3508	位速	其他電子
+3511	矽瑪	電子零件
+3512	皇龍	建材營造
+3515	華擎	電腦週邊
+3516	亞帝歐	光電
+3518	柏騰	其他電子
+3520	華盈	電子零件
+3521	台鋼建設	建材營造
+3522	御嵿	觀光餐旅
+3523	迎輝	光電
+3526	凡甲	電子零件
+3527	聚積	半導體
+3528	安馳	電子通路
+3529	力旺	半導體
+3530	晶相光	半導體
+3531	先益	光電
+3532	台勝科	半導體
+3533	嘉澤	電子零件
+3535	晶彩科	光電
+3537	堡達	電子零件
+3540	曜越	電腦週邊
+3541	西柏	其他電子
+3543	州巧	光電
+3545	敦泰	半導體
+3546	宇峻	文化創意
+3548	兆利	電子零件
+3550	聯穎	電子零件
+3551	世禾	綠能環保
+3552	同致	其他電子
+3555	博士旺	半導體
+3556	禾瑞亞	半導體
+3557	嘉威	居家生活
+3558	神準	通信網路
+3563	牧德	光電
+3564	其陽	通信網路
+3567	逸昌	半導體
+3570	大塚	資訊服務
+3576	聯合再生	光電
+3577	泓格	電腦週邊
+3580	友威科	其他電子
+3581	博磊	半導體
+3583	辛耘	半導體
+3587	閎康	其他電子
+3588	通嘉	半導體
+3591	艾笛森	光電
+3592	瑞鼎	半導體
+3593	力銘	電子零件
+3594	磐儀	電腦週邊
+3596	智易	通信網路
+3597	映興	電子零件
+3605	宏致	電子零件
+3607	谷崧	電子零件
+3609	三一東林	電子零件
+3611	鼎翰	電腦週邊
+3615	安可	光電
+3617	碩天	其他電子
+3622	洋華	光電
+3623	富晶通	光電
+3624	光頡	電子零件
+3625	西勝	電腦週邊
+3628	盈正	其他電子
+3629	地心引力	文化創意
+3630	新鉅科	光電
+3631	晟楠	電子零件
+3632	研勤	通信網路
+3645	達邁	電子零件
+3646	艾恩特	電子零件
+3652	精聯	電腦週邊
+3653	健策	電子零件
+3661	世芯-KY	半導體
+3663	鑫科	其他電子
+3664	安瑞-KY	通信網路
+3665	貿聯-KY	其他電子
+3666	光耀	光電
+3669	圓展	通信網路
+3672	康聯訊	通信網路
+3673	TPK-KY	光電
+3675	德微	半導體
+3679	新至陞	電子零件
+3680	家登	半導體
+3684	榮昌	通信網路
+3685	元創精密	電機機械
+3686	達能	半導體
+3687	歐買尬	數位雲端
+3689	湧德	電子零件
+3691	碩禾	光電
+3693	營邦	電腦週邊
+3694	海華	通信網路
+3701	大眾控	電腦週邊
+3702	大聯大	電子通路
+3703	欣陸	建材營造
+3704	合勤控	通信網路
+3705	永信	生技醫療
+3706	神達	電腦週邊
+3707	漢磊	半導體
+3708	上緯投控	綠能環保
+3709	鑫聯大投控	電腦週邊
+3710	連展投控	電子零件
+3711	日月光投控	半導體
+3712	永崴投控	電腦週邊
+3713	新晶投控	綠能環保
+3714	富采	光電
+3715	定穎投控	電子零件
+3716	中化控股	生技醫療
+3717	聯嘉投控	汽車
+4102	永日	生技醫療
+4104	佳醫	生技醫療
+4105	東洋	生技醫療
+4106	雃博	生技醫療
+4107	邦特	生技醫療
+4108	懷特	生技醫療
+4109	加捷生醫	生技醫療
+4111	濟生	生技醫療
+4113	聯上	建材營造
+4114	健喬	生技醫療
+4116	明基醫	生技醫療
+4119	旭富	生技醫療
+4120	友華	生技醫療
+4121	優盛	生技醫療
+4123	晟德	生技醫療
+4126	太醫	生技醫療
+4127	天良	生技醫療
+4128	中天	生技醫療
+4129	聯合	生技醫療
+4130	健亞	生技醫療
+4131	浩泰	生技醫療
+4133	亞諾法	生技醫療
+4137	麗豐-KY	生技醫療
+4138	曜亞	生技醫療
+4139	馬光-KY	生技醫療
+4142	國光生	生技醫療
+4147	中裕	生技醫療
+4148	全宇生技-KY	生技醫療
+4153	鈺緯	生技醫療
+4154	樂威科-KY	其他
+4155	訊映	生技醫療
+4157	太景*-KY	生技醫療
+4160	訊聯基因	生技醫療
+4161	聿新科	生技醫療
+4162	智擎	生技醫療
+4163	鐿鈦	生技醫療
+4164	承業醫	生技醫療
+4166	友霖	生技醫療
+4167	松瑞藥	生技醫療
+4168	醣聯	生技醫療
+4171	瑞基	農業科技
+4173	久裕	生技醫療
+4174	浩鼎	生技醫療
+4175	杏一	生技醫療
+4183	福永生技	生技醫療
+4188	安克	生技醫療
+4190	佐登-KY	生技醫療
+4192	杏國	生技醫療
+4198	欣大健康	生技醫療
+4205	中華食	食品
+4207	環泰	食品
+4303	信立	塑膠
+4304	勝昱	塑膠
+4305	世坤	塑膠
+4306	炎洲	塑膠
+4401	東隆興	紡織纖維
+4402	郡都開發	紡織纖維
+4406	新昕纖	紡織纖維
+4413	飛寶企業	紡織纖維
+4414	如興	紡織纖維
+4416	三圓	建材營造
+4417	金洲	紡織纖維
+4419	皇家美食	觀光餐旅
+4420	光明	紡織纖維
+4426	利勤	紡織纖維
+4430	耀億	其他
+4432	銘旺實	紡織纖維
+4433	興采	紡織纖維
+4438	廣越	紡織纖維
+4439	冠星-KY	紡織纖維
+4440	宜新實業	紡織纖維
+4441	振大環球	紡織纖維
+4442	竣邦-KY	紡織纖維
+4502	健信	電機機械
+4503	金雨	電機機械
+4506	崇友	電機機械
+4510	高鋒	電機機械
+4513	福裕	電機機械
+4523	永彰	電機機械
+4526	東台	電機機械
+4527	方方土霖	電機機械
+4528	江興鍛	電機機械
+4529	淳紳	其他
+4530	宏易	觀光餐旅
+4532	瑞智	電機機械
+4533	協易機	電機機械
+4534	慶騰	電機機械
+4535	至興	電機機械
+4536	拓凱	運動休閒
+4538	大詠城	電機機械
+4540	全球傳動	電機機械
+4541	晟田	其他
+4542	科嶠	電子零件
+4543	萬在	電機機械
+4545	銘鈺	電子零件
+4549	桓達	電機機械
+4550	長佳	電機機械
+4551	智伸科	汽車
+4552	力達-KY	電機機械
+4554	橙的	其他電子
+4555	氣立	電機機械
+4556	旭然	其他
+4557	永新-KY	汽車
+4558	寶緯	電機機械
+4560	強信-KY	電機機械
+4561	健椿	電機機械
+4562	穎漢	電機機械
+4563	百德	電機機械
+4564	元翎	電機機械
+4566	時碩工業	電機機械
+4568	科際精密	電機機械
+4569	六方科-KY	汽車
+4571	鈞興-KY	電機機械
+4572	駐龍	電機機械
+4576	大銀微系統	電機機械
+4577	達航科技	其他電子
+4580	捷流閥業	電機機械
+4581	光隆精密-KY	汽車
+4583	台灣精銳	電機機械
+4584	君帆	電機機械
+4585	達明	其他電子
+4588	玖鼎電力	其他電子
+4609	唐鋒	居家生活
+4702	中美實	居家生活
+4706	大恭	化學
+4707	磐亞	化學
+4711	永純	化學
+4714	永捷	化學
+4716	大立	化學
+4720	德淵	化學
+4721	美琪瑪	化學
+4722	國精化	化學
+4726	永昕	生技醫療
+4728	雙美	生技醫療
+4729	熒茂	光電
+4735	豪展	生技醫療
+4736	泰博	生技醫療
+4737	華廣	生技醫療
+4739	康普	化學
+4741	泓瀚	化學
+4743	合一	生技醫療
+4744	皇將	生技醫療
+4745	合富-KY	生技醫療
+4746	台耀	生技醫療
+4747	強生製藥	生技醫療
+4749	新應材	半導體
+4754	國碳科	化學
+4755	三福化	化學
+4760	勤凱科技	其他電子
+4763	材料*-KY	化學
+4764	雙鍵	化學
+4766	南寶	化學
+4767	誠泰科技	化學
+4768	晶呈科技	化學
+4770	上品	化學
+4771	望隼	生技醫療
+4772	台特化	化學
+4804	大略-KY	觀光餐旅
+4806	桂田文創	文化創意
+4807	日成-KY	貿易百貨
+4903	聯光通	通信網路
+4904	遠傳	通信網路
+4905	台聯電	通信網路
+4906	正文	通信網路
+4907	富宇	建材營造
+4908	前鼎	通信網路
+4909	新復興	通信網路
+4911	德英	生技醫療
+4912	聯德控股-KY	電子零件
+4915	致伸	電子零件
+4916	事欣科	電腦週邊
+4919	新唐	半導體
+4923	力士	半導體
+4924	欣厚-KY	電腦週邊
+4927	泰鼎-KY	電子零件
+4930	燦星網	電器電纜
+4931	新盛力	電腦週邊
+4933	友輝	光電
+4934	太極	光電
+4935	茂林-KY	光電
+4938	和碩	電腦週邊
+4939	亞電	電子零件
+4942	嘉彰	光電
+4943	康控-KY	電子零件
+4946	辣椒	文化創意
+4949	有成精密	光電
+4950	金耘國際	鋼鐵
+4951	精拓科	半導體
+4952	凌通	半導體
+4953	緯軟	資訊服務
+4956	光鋐	光電
+4958	臻鼎-KY	電子零件
+4960	誠美材	光電
+4961	天鈺	半導體
+4966	譜瑞-KY	半導體
+4967	十銓	半導體
+4968	立積	半導體
+4971	IET-KY	半導體
+4972	湯石照明	光電
+4973	廣穎電通	半導體
+4974	亞泰	電子零件
+4976	佳凌	光電
+4977	眾達-KY	通信網路
+4979	華星光	通信網路
+4987	科誠	電腦週邊
+4989	榮科	電子零件
+4991	環宇-KY	半導體
+4994	傳奇	資訊服務
+4995	晶達	光電
+4999	鑫禾	電子零件
+5007	三星	鋼鐵
+5009	榮剛	鋼鐵
+5011	久陽	鋼鐵
+5013	強新	鋼鐵
+5014	建錩	鋼鐵
+5015	華祺	鋼鐵
+5016	松和	鋼鐵
+5201	凱衛	資訊服務
+5202	力新	資訊服務
+5203	訊連	資訊服務
+5205	中茂	綠能環保
+5206	坤悅	建材營造
+5209	新鼎	其他
+5210	寶碩	資訊服務
+5211	蒙恬	資訊服務
+5212	凌網	資訊服務
+5213	亞昕	建材營造
+5215	科嘉-KY	電腦週邊
+5220	萬達光電	光電
+5222	全訊	半導體
+5223	安力-KY	電腦週邊
+5225	東科-KY	其他電子
+5227	立凱-KY	電子零件
+5228	鈺鎧	電子零件
+5230	雷笛克光學	光電
+5234	達興材料	光電
+5236	凌陽創新	半導體
+5243	乙盛-KY	光電
+5244	弘凱	光電
+5245	智晶	光電
+5251	天鉞電	光電
+5258	虹堡	電腦週邊
+5263	智崴	文化創意
+5269	祥碩	半導體
+5272	笙科	半導體
+5274	信驊	半導體
+5276	達輝-KY	其他
+5278	尚凡*	數位雲端
+5283	禾聯碩	電器電纜
+5284	jpp-KY	其他
+5285	界霖	半導體
+5287	數字	數位雲端
+5288	豐祥-KY	電機機械
+5289	宜鼎	電腦週邊
+5291	邑昇	電子零件
+5292	華懋	綠能環保
+5299	杰力	半導體
+5301	寶得利	觀光餐旅
+5302	太欣	半導體
+5306	桂盟	運動休閒
+5309	系統電	電子零件
+5310	天剛	資訊服務
+5312	寶島科	生技醫療
+5314	世紀*	其他
+5315	光聯	光電
+5321	美而快	數位雲端
+5324	士開	建材營造
+5328	華容	電子零件
+5340	建榮	電子零件
+5344	立衛	半導體
+5345	馥鴻	其他
+5347	世界	半導體
+5348	正能量智能	運動休閒
+5351	鈺創	半導體
+5353	台林	通信網路
+5355	佳總	電子零件
+5356	協益	電腦週邊
+5364	力麗店	觀光餐旅
+5371	中光電	光電
+5381	光譜	電子零件
+5386	青雲	電腦週邊
+5388	中磊	通信網路
+5392	能率	光電
+5398	慕康生醫	其他
+5403	中菲	資訊服務
+5410	國眾	資訊服務
+5425	台半	半導體
+5426	振發	電腦週邊
+5432	新門	綠能環保
+5434	崇越	電子通路
+5438	東友	電腦週邊
+5439	高技	電子零件
+5443	均豪	半導體
+5450	南良	其他
+5452	佶優	其他電子
+5455	昇益	建材營造
+5457	宣德	電子零件
+5460	同協	電子零件
+5464	霖宏	電子零件
+5465	富驊	電腦週邊
+5468	凱鈺	半導體
+5469	瀚宇博	電子零件
+5471	松翰	半導體
+5474	聰泰	電腦週邊
+5475	德宏	電子零件
+5478	智冠	文化創意
+5481	新華	其他
+5483	中美晶	半導體
+5484	慧友	光電
+5487	通泰	半導體
+5488	松普	電子零件
+5489	彩富	其他電子
+5490	同亨	電腦週邊
+5493	三聯	其他電子
+5498	凱崴	電子零件
+5508	永信建	建材營造
+5511	德昌	建材營造
+5512	力麒	建材營造
+5514	三豐	建材營造
+5515	建國	建材營造
+5516	雙喜	建材營造
+5519	隆大	建材營造
+5520	力泰	建材營造
+5521	工信	建材營造
+5522	遠雄	建材營造
+5523	豐謙	建材營造
+5525	順天	建材營造
+5529	鉅陞	建材營造
+5530	龍巖	其他
+5531	鄉林	建材營造
+5533	皇鼎	建材營造
+5534	長虹	建材營造
+5536	聖暉*	其他電子
+5538	東明-KY	鋼鐵
+5543	桓鼎-KY	建材營造
+5546	永固-KY	建材營造
+5548	安倉	建材營造
+5601	台聯櫃	航運
+5603	陸海	航運
+5604	中連	其他
+5607	遠雄港	航運
+5608	四維航	航運
+5609	中菲行	航運
+5701	劍湖山	觀光餐旅
+5703	亞都麗緻	觀光餐旅
+5704	老爺知	觀光餐旅
+5706	鳳凰	觀光餐旅
+5864	致和證	金融
+5871	中租-KY	其他
+5876	上海商銀	金融保險
+5878	台名	金融
+5880	合庫金	金融保險
+5902	德記	居家生活
+5903	全家	居家生活
+5904	寶雅	居家生活
+5905	南仁湖	觀光餐旅
+5906	台南-KY	貿易百貨
+5907	大洋-KY	貿易百貨
+6005	群益證	金融保險
+6015	宏遠證	金融
+6016	康和證	金融
+6020	大展證	金融
+6021	美好證	金融
+6023	元大期貨	金融
+6024	群益期	金融保險
+6026	福邦證	金融
+6101	寬魚國際	文化創意
+6103	合邦	半導體
+6104	創惟	半導體
+6108	競國	電子零件
+6109	亞元	通信網路
+6111	光聚	文化創意
+6112	邁達特	資訊服務
+6113	亞矽	電子通路
+6114	久威	電子零件
+6115	鎰勝	電子零件
+6116	彩晶	光電
+6117	迎廣	電腦週邊
+6118	建達	電子通路
+6120	達運	光電
+6121	新普	電腦週邊
+6122	擎邦	電機機械
+6123	上奇	資訊服務
+6124	業強	電子零件
+6125	廣運	光電
+6126	信音	電子零件
+6127	九豪	電子零件
+6128	上福	電腦週邊
+6129	普誠	半導體
+6130	上亞科技	生技醫療
+6133	金橋	電子零件
+6134	萬旭	電子零件
+6136	富爾特	通信網路
+6138	茂達	半導體
+6139	亞翔	其他電子
+6140	訊達電腦	資訊服務
+6141	柏承	電子零件
+6142	友勁	通信網路
+6143	振曜	通信網路
+6144	得利影	文化創意
+6146	耕興	其他電子
+6147	頎邦	半導體
+6148	驊宏資	資訊服務
+6150	撼訊	電腦週邊
+6151	晉倫	其他電子
+6152	百一	通信網路
+6153	嘉聯益	電子零件
+6154	順發	電子通路
+6155	鈞寶	電子零件
+6156	松上	電子零件
+6158	禾昌	電子零件
+6160	欣技	電腦週邊
+6161	捷波	電腦週邊
+6163	華電網	通信網路
+6164	華興	光電
+6165	浪凡	數位雲端
+6166	凌華	電腦週邊
+6167	久正	光電
+6168	宏齊	光電
+6169	昱泉	文化創意
+6170	統振	通信網路
+6171	大城地產	建材營造
+6173	信昌電	電子零件
+6174	安碁	電子零件
+6175	立敦	電子零件
+6176	瑞儀	光電
+6177	達麗	建材營造
+6179	亞通	其他
+6180	橘子	文化創意
+6182	合晶	半導體
+6183	關貿	資訊服務
+6184	大豐電	其他
+6185	幃翔	電子零件
+6186	新潤	建材營造
+6187	萬潤	半導體
+6188	廣明	電腦週邊
+6189	豐藝	電子通路
+6190	萬泰科	通信網路
+6191	精成科	電子零件
+6192	巨路	其他電子
+6194	育富	電子零件
+6195	詩肯	居家生活
+6196	帆宣	其他電子
+6197	佳必琪	電子零件
+6198	瑞築	建材營造
+6199	天品	其他
+6201	亞弘電	其他電子
+6202	盛群	半導體
+6203	海韻電	電子零件
+6204	艾華	電子零件
+6205	詮欣	電子零件
+6206	飛捷	電腦週邊
+6207	雷科	電子零件
+6208	日揚	半導體
+6209	今國光	光電
+6210	慶生	電子零件
+6212	理銘	建材營造
+6213	聯茂	電子零件
+6214	精誠	資訊服務
+6215	和椿	其他電子
+6216	居易	通信網路
+6217	中探針	電子零件
+6218	豪勉	通信網路
+6219	富旺	建材營造
+6220	岳豐	電子零件
+6221	晉泰	資訊服務
+6222	立軒	光電
+6223	旺矽	半導體
+6224	聚鼎	電子零件
+6225	天瀚	光電
+6226	光鼎	光電
+6227	茂綸	電子通路
+6228	全譜	電腦週邊
+6229	研通	半導體
+6230	尼得科超眾	電腦週邊
+6231	系微	資訊服務
+6233	旺玖	半導體
+6234	高僑	光電
+6235	華孚	電腦週邊
+6236	中湛	其他
+6237	驊訊	半導體
+6239	力成	半導體
+6240	松崗	資訊服務
+6241	易通展	通信網路
+6242	立康	生技醫療
+6243	迅杰	半導體
+6244	茂迪	光電
+6245	立端	通信網路
+6246	臺龍	光電
+6248	沛波	鋼鐵
+6257	矽格	半導體
+6259	百徽	電子零件
+6261	久元	半導體
+6263	普萊德	通信網路
+6264	富裔	建材營造
+6265	方土昶	電子通路
+6266	泰詠	電子零件
+6269	台郡	電子零件
+6270	倍微	電子通路
+6271	同欣電	半導體
+6272	驊陞	電子零件
+6274	台燿	電子零件
+6275	元山	電子零件
+6276	安鈦克	電腦週邊
+6277	宏正	電腦週邊
+6278	台表科	光電
+6279	胡連	電子零件
+6281	全國電	電子通路
+6282	康舒	電子零件
+6283	淳安	其他電子
+6284	佳邦	電子零件
+6285	啟碁	通信網路
+6290	良維	電子零件
+6291	沛亨	半導體
+6292	迅德	電子零件
+6294	智基	文化創意
+6405	悅城	光電
+6409	旭隼	其他電子
+6411	晶焱	半導體
+6412	群電	電子零件
+6414	樺漢	電腦週邊
+6415	矽力*-KY	半導體
+6416	瑞祺電通	通信網路
+6417	韋僑	通信網路
+6418	詠昇	電子零件
+6419	京晨科	光電
+6423	億而得-創	半導體
+6425	易發	電機機械
+6426	統新	通信網路
+6431	光麗-KY	生技醫療
+6432	今展科	電子零件
+6435	大中	半導體
+6438	迅得	其他電子
+6441	廣錠	電腦週邊
+6442	光聖	通信網路
+6443	元晶	光電
+6446	藥華藥	生技醫療
+6449	鈺邦	電子零件
+6451	訊芯-KY	半導體
+6456	GIS-KY	光電
+6461	益得	生技醫療
+6462	神盾	半導體
+6464	台數科	其他
+6465	威潤	通信網路
+6469	大樹	生技醫療
+6470	宇智	通信網路
+6472	保瑞	生技醫療
+6474	華豫寧	電子通路
+6477	安集	光電
+6482	弘煜科	文化創意
+6485	點序	半導體
+6486	互動	通信網路
+6488	環球晶	半導體
+6491	晶碩	生技醫療
+6492	生華科	生技醫療
+6494	九齊	半導體
+6496	科懋	生技醫療
+6498	久禾光	光電
+6499	益安	生技醫療
+6504	南六	其他
+6505	台塑化	油電燃氣
+6506	雙邦	紡織纖維
+6508	惠光	農業科技
+6509	聚和	化學
+6510	精測	半導體
+6512	啟發電	其他電子
+6515	穎崴	半導體
+6516	勤崴國際	資訊服務
+6517	保勝光學	光電
+6523	達爾膚	生技醫療
+6525	捷敏-KY	半導體
+6526	達發	半導體
+6527	明達醫	生技醫療
+6530	創威	通信網路
+6531	愛普*	半導體
+6532	瑞耘	半導體
+6533	晶心科	半導體
+6534	正瀚-創	生技醫療
+6535	順藥	生技醫療
+6538	倉和	電子零件
+6541	泰福-KY	生技醫療
+6542	隆中	文化創意
+6546	正基	通信網路
+6547	高端疫苗	生技醫療
+6548	長科*	半導體
+6550	北極星藥業-KY	生技醫療
+6552	易華電	半導體
+6556	勝品	光電
+6558	興能高	其他電子
+6560	欣普羅	光電
+6561	是方	通信網路
+6568	宏觀	半導體
+6569	醫揚	生技醫療
+6570	維田	電腦週邊
+6573	虹揚-KY	半導體
+6574	霈方	生技醫療
+6576	逸達	生技醫療
+6577	勁豐	電腦週邊
+6578	達邦蛋白	農業科技
+6579	研揚	電腦週邊
+6581	鋼聯	綠能環保
+6582	申豐	橡膠
+6584	南俊國際	電子零件
+6585	鼎基	其他
+6588	東典光電	通信網路
+6589	台康生技	生技醫療
+6590	普鴻	資訊服務
+6591	動力-KY	電腦週邊
+6592	和潤企業	其他
+6593	台灣銘板	資訊服務
+6596	寬宏藝術	文化創意
+6597	立誠	電子零件
+6598	ABC-KY	生技醫療
+6603	富強鑫	電機機械
+6605	帝寶	汽車
+6606	建德工業	電機機械
+6609	瀧澤科	電機機械
+6612	奈米醫材	生技醫療
+6613	朋億*	其他電子
+6614	資拓宏宇	數位雲端
+6615	慧智	生技醫療
+6616	特昇-KY	居家生活
+6617	共信-KY	生技醫療
+6620	漢達	生技醫療
+6624	萬年清	綠能環保
+6625	必應	其他
+6629	泰金-KY	居家生活
+6637	醫影	生技醫療
+6640	均華	半導體
+6641	基士德-KY	綠能環保
+6642	富致	電子零件
+6643	M31	半導體
+6645	金萬林-創	生技醫療
+6649	台生材	生技醫療
+6651	全宇昕	半導體
+6654	天正國際	其他電子
+6655	科定	其他
+6657	華安	生技醫療
+6658	聯策	其他電子
+6661	威健生技	生技醫療
+6662	樂斯科	生技醫療
+6664	群翊	電子零件
+6666	羅麗芬-KY	生技醫療
+6667	信紘科	其他電子
+6668	中揚光	光電
+6669	緯穎	電腦週邊
+6670	復盛應用	運動休閒
+6671	三能-KY	居家生活
+6672	騰輝電子-KY	電子零件
+6674	鋐寶科技	通信網路
+6679	鈺太	半導體
+6680	鑫創電子	電腦週邊
+6683	雍智科技	半導體
+6684	安格	半導體
+6689	伊雲谷	數位雲端
+6690	安碁資訊	數位雲端
+6691	洋基工程	其他電子
+6692	進能服	綠能環保
+6693	廣閎科	半導體
+6695	芯鼎	半導體
+6697	東捷資訊	資訊服務
+6698	旭暉應材	其他電子
+6703	軒郁	生技醫療
+6706	惠特	光電
+6708	天擎	半導體
+6712	長聖	生技醫療
+6715	嘉基	電子零件
+6716	應廣	半導體
+6719	力智	半導體
+6720	久昌	半導體
+6721	信實	其他
+6725	矽科宏晟	其他電子
+6727	亞泰金屬	電子零件
+6728	上洋	居家生活
+6730	常廣	生技醫療
+6732	昇佳電子	半導體
+6733	博晟生醫	生技醫療
+6735	美達科技	其他電子
+6739	竹陞科技	其他電子
+6741	91APP*-KY	數位雲端
+6742	澤米	光電
+6743	安普新	其他電子
+6751	智聯服務	資訊服務
+6752	叡揚	資訊服務
+6753	龍德造船	航運
+6754	匯僑設計	居家生活
+6756	威鋒電子	半導體
+6757	台灣虎航	航運
+6761	穩得	電子零件
+6762	達亞	生技醫療
+6763	綠界科技*	數位雲端
+6767	台微醫	生技醫療
+6768	志強-KY	運動休閒
+6770	力積電	半導體
+6771	平和環保-創	綠能環保
+6776	展碁國際	電子通路
+6781	AES-KY	電子零件
+6782	視陽	生技醫療
+6785	昱展新藥	生技醫療
+6788	華景電	半導體
+6789	采鈺	半導體
+6790	永豐實	造紙
+6791	虎門科技	資訊服務
+6792	詠業	通信網路
+6794	向榮生技	生技醫療
+6796	晉弘	生技醫療
+6799	來頡	半導體
+6803	崑鼎	綠能環保
+6804	明係	運動休閒
+6805	富世達	電子零件
+6806	森崴能源	綠能環保
+6807	峰源-KY	居家生活
+6811	宏碁資訊	數位雲端
+6821	聯寶	電子零件
+6823	濾能	半導體
+6829	千附精密	半導體
+6830	汎銓	其他電子
+6831	邁科	電腦週邊
+6834	天二科技	電子零件
+6835	圓裕	電子零件
+6838	台新藥	生技醫療
+6840	東研信超	其他電子
+6841	長佳智能	生技醫療
+6843	進典	電機機械
+6844	諾貝兒	生技醫療
+6846	綠茵	食品
+6854	錼創科技-KY創	半導體
+6855	數泓科	其他電子
+6856	鑫傳	文化創意
+6859	伯特光	光電
+6861	睿生光電	生技醫療
+6862	三集瑞-KY	電子零件
+6863	永道-KY	通信網路
+6865	偉康科技	數位雲端
+6869	雲豹能源	綠能環保
+6870	騰雲	數位雲端
+6872	浩宇生醫	生技醫療
+6873	泓德能源	綠能環保
+6874	倍力	資訊服務
+6875	國邑*	生技醫療
+6877	鏵友益	其他電子
+6881	潤德	其他
+6884	海柏特	資訊服務
+6885	全福生技	生技醫療
+6887	寶綠特-KY	綠能環保
+6890	來億-KY	運動休閒
+6894	衛司特	綠能環保
+6895	宏碩系統	半導體
+6899	創為精密	光電
+6901	鑽石投資	其他
+6902	GOGOLOOK	數位雲端
+6903	巨漢	其他電子
+6904	伯鑫	其他
+6906	現觀科	數位雲端
+6909	創控	半導體
+6910	德鴻	數位雲端
+6913	鴻呈	電子零件
+6914	阜爾運通	其他
+6916	華凌	光電
+6918	愛派司	生技醫療
+6919	康霈*	生技醫療
+6921	嘉雨思-創	半導體
+6922	宸曜	電腦週邊
+6923	中台	綠能環保
+6924	榮惠-KY創	電子零件
+6925	意藍	數位雲端
+6928	攸泰科技	電腦週邊
+6929	佑全	生技醫療
+6931	青松健康	生技醫療
+6933	AMAX-KY	電腦週邊
+6936	永鴻生技	生技醫療
+6937	天虹	半導體
+6944	兆聯實業	綠能環保
+6949	沛爾生醫-創	生技醫療
+6951	青新-創	綠能環保
+6952	大武山	其他
+6953	家碩	半導體
+6955	邦睿生技-創	生技醫療
+6957	裕慶-KY	其他
+6958	日盛台駿	其他
+6962	奕力-KY	半導體
+6965	中傑-KY	運動休閒
+6967	汎瑋材料	電子零件
+6968	萬達寵物	居家生活
+6969	成信實業*-創	綠能環保
+6971	惠民實業	綠能環保
+6982	大井泵浦	電機機械
+6988	威力暘-創	汽車
+6994	富威電力	綠能環保
+6996	力領科技	半導體
+6997	博弘	數位雲端
+7402	邑錡	光電
+7547	碩網	數位雲端
+7556	意德士科技	半導體
+7584	樂意	文化創意
+7610	聯友金屬-創	綠能環保
+7631	聚賢研發-創	其他電子
+7642	昶瑞機電	電機機械
+7703	銳澤	其他電子
+7704	明遠精密	半導體
+7705	三商餐飲	觀光餐旅
+7708	全家餐飲	觀光餐旅
+7709	榮田	電機機械
+7711	永擎	電腦週邊
+7712	博盛半導體	半導體
+7713	威力德生醫	生技醫療
+7714	創泓科技	數位雲端
+7715	裕山	綠能環保
+7716	昱臺國際	航運
+7717	萊德光電-KY	通信網路
+7718	友鋮	鋼鐵
+7721	微程式	數位雲端
+7722	LINEPAY	數位雲端
+7723	築間	觀光餐旅
+7728	光焱科技	其他電子
+7730	暉盛-創	半導體
+7732	金興精密	汽車
+7734	印能科技	半導體
+7736	虎山	汽車
+7738	東聯互動	數位雲端
+7740	熙特爾-創	綠能環保
+7743	金利食安	食品
+7744	崴寶	電子零件
+7747	昕奇雲端	數位雲端
+7749	意騰-KY	半導體
+7750	新代	電機機械
+7751	竑騰	半導體
+7753	星亞	光電
+7757	金色三麥	觀光餐旅
+7765	中華資安	數位雲端
+7767	仁大資訊	資訊服務
+7769	鴻勁	半導體
+7770	君曜	半導體
+7777	能率亞洲	其他
+7780	大研生醫	食品
+7782	光速火箭	居家生活
+7786	東方風能	綠能環保
+7788	松川精密	電子零件
+7791	皇家可口	食品
+7799	禾榮科	生技醫療
+7805	威聯通	數位雲端
+7810	捷創科技	半導體
+8011	台通	通信網路
+8016	矽創	半導體
+8021	尖點	其他電子
+8024	佑華	半導體
+8027	鈦昇	電機機械
+8028	昇陽半導體	半導體
+8032	光菱	電子通路
+8033	雷虎	其他
+8034	榮群	通信網路
+8038	長園科	電子零件
+8039	台虹	電子零件
+8040	九暘	半導體
+8042	金山電	電子零件
+8043	蜜望實	電子零件
+8044	網家	數位雲端
+8045	達運光電	通信網路
+8046	南電	電子零件
+8047	星雲	其他電子
+8048	德勝	通信網路
+8049	晶采	光電
+8050	廣積	電腦週邊
+8054	安國	半導體
+8059	凱碩	通信網路
+8064	東捷	光電
+8066	來思達	居家生活
+8067	志旭	電子通路
+8068	全達	電子通路
+8069	元太	光電
+8070	長華*	電子通路
+8071	能率網通	電子零件
+8072	陞泰	電子通路
+8074	鉅橡	電子零件
+8076	伍豐	電腦週邊
+8077	洛碁	觀光餐旅
+8080	泰霖	建材營造
+8081	致新	半導體
+8083	瑞穎	電機機械
+8084	巨虹	電子通路
+8085	福華	其他電子
+8086	宏捷科	半導體
+8087	麗升能源	綠能環保
+8088	品安	半導體
+8089	康全電訊	通信網路
+8091	翔名	半導體
+8092	建暐	其他電子
+8093	保銳	電子零件
+8096	擎亞	電子通路
+8097	常珵	通信網路
+8099	大世科	資訊服務
+8101	華冠	通信網路
+8102	傑霖科技	半導體
+8103	瀚荃	電子零件
+8104	錸寶	光電
+8105	凌巨	光電
+8107	大億金茂	電機機械
+8109	博大	電子零件
+8110	華東	半導體
+8111	立碁	光電
+8112	至上	電子通路
+8114	振樺電	電腦週邊
+8121	越峰	電子零件
+8131	福懋科	半導體
+8147	正淩	電子零件
+8150	南茂	半導體
+8155	博智	電子零件
+8162	微矽電子-創	半導體
+8163	達方	電腦週邊
+8171	天宇	綠能環保
+8176	智捷	通信網路
+8182	加高	電子零件
+8183	精星	其他電子
+8201	無敵	其他電子
+8210	勤誠	電腦週邊
+8213	志超	電子零件
+8215	明基材	光電
+8222	寶一	電機機械
+8227	巨有科技	半導體
+8234	新漢	電腦週邊
+8240	華宏	光電
+8249	菱光	電子零件
+8255	朋程	電機機械
+8261	富鼎	半導體
+8271	宇瞻	半導體
+8272	全景軟體	資訊服務
+8277	商丞	半導體
+8279	生展	生技醫療
+8284	三竹	資訊服務
+8289	泰藝	電子零件
+8291	尚茂	電子零件
+8299	群聯	半導體
+8341	日友	綠能環保
+8342	益張	其他
+8349	恒耀國際	鋼鐵
+8354	冠好	其他
+8358	金居	電子零件
+8367	建新國際	航運
+8374	羅昇	電機機械
+8383	千附	半導體
+8390	金益鼎	綠能環保
+8401	白紗科	其他
+8403	盛弘	生技醫療
+8404	百和興業-KY	其他
+8409	商之器	生技醫療
+8410	森田	電腦週邊
+8411	福貞-KY	其他
+8415	大國鋼	鋼鐵
+8416	實威	資訊服務
+8421	旭源	其他
+8422	可寧衛*	綠能環保
+8423	保綠-KY	綠能環保
+8424	惠普	建材營造
+8426	紅木-KY	其他
+8429	金麗-KY	貿易百貨
+8431	匯鑽科	其他電子
+8432	東生華	生技醫療
+8433	弘帆	居家生活
+8435	鉅邁	其他
+8436	大江	生技醫療
+8437	大地-KY	其他
+8438	昶昕	綠能環保
+8440	綠電	綠能環保
+8442	威宏-KY	其他
+8443	阿瘦	貿易百貨
+8444	綠河-KY	其他
+8446	華研	文化創意
+8450	霹靂	文化創意
+8454	富邦媒	數位雲端
+8455	大拓-KY	其他電子
+8462	柏文	運動休閒
+8463	潤泰材	其他
+8464	億豐	居家生活
+8466	美吉吉-KY	其他
+8467	波力-KY	運動休閒
+8472	夠麻吉	數位雲端
+8473	山林水	綠能環保
+8476	台境*	綠能環保
+8477	創業家	數位雲端
+8478	東哥遊艇	運動休閒
+8481	政伸	其他
+8482	商億-KY	居家生活
+8487	愛爾達-創	數位雲端
+8488	吉源-KY	其他
+8489	三貝德	其他
+8499	鼎炫-KY	其他電子
+8905	裕國	其他
+8906	花王	其他
+8908	欣雄	油電燃氣
+8916	光隆	其他
+8917	欣泰	油電燃氣
+8921	沈氏	其他
+8923	時報	文化創意
+8924	大田	運動休閒
+8926	台汽電	油電燃氣
+8927	北基	油電燃氣
+8928	鉅明	運動休閒
+8929	富堡	其他
+8930	青鋼	鋼鐵
+8931	大汽電	油電燃氣
+8932	智通*	其他
+8933	愛地雅	運動休閒
+8935	邦泰	其他
+8936	國統	其他
+8937	合騏	其他
+8938	明安	運動休閒
+8940	新天地	觀光餐旅
+8941	關中	居家生活
+8942	森鉅	其他
+8996	高力	電機機械
+9103	美德醫療-DR	存託憑證
+9105	泰金寶-DR	存託憑證
+9110	越南控-DR	存託憑證
+9136	巨騰-DR	存託憑證
+9802	鈺齊-KY	運動休閒
+9902	台火	其他
+9904	寶成	運動休閒
+9905	大華	其他
+9906	欣巴巴	建材營造
+9907	統一實	其他
+9908	大台北	油電燃氣
+9910	豐泰	運動休閒
+9911	櫻花	居家生活
+9912	偉聯	電腦週邊
+9914	美利達	運動休閒
+9917	中保科	其他
+9918	欣天然	油電燃氣
+9919	康那香	其他
+9921	巨大	運動休閒
+9924	福興	居家生活
+9925	新保	其他
+9926	新海	油電燃氣
+9927	泰銘	其他
+9928	中視	其他
+9929	秋雨	其他
+9930	中聯資源	綠能環保
+9931	欣高	油電燃氣
+9933	中鼎	其他
+9934	成霖	居家生活
+9935	慶豐富	居家生活
+9937	全國	油電燃氣
+9938	百和	其他
+9939	宏全	其他
+9940	信義	其他
+9941	裕融	其他
+9942	茂順	其他
+9943	好樂迪	觀光餐旅
+9944	新麗	其他
+9945	潤泰新	其他
+9946	三發地產	建材營造
+9949	琉園	文化創意
+9950	萬國通	塑膠
+9951	皇田	電機機械
+9955	佳龍	綠能環保
+9958	世紀鋼	鋼鐵
+9960	邁達康	運動休閒
+9962	有益	鋼鐵
+9998	上櫃指數	-
+9999	上市指數	-
+910322	康師傅-DR	存託憑證
+910861	神州-DR	存託憑證
+911608	明輝-DR	存託憑證
+911622	泰聚亨-DR	存託憑證
+911868	同方友友-DR	存託憑證
+912000	晨訊科-DR	存託憑證`;
+
+export default CDPAnalyzer;

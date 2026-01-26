@@ -23,7 +23,8 @@
 
         body {
             font-family: 'Noto Sans TC', sans-serif;
-            background-color: #f1f5f9; /* Slate-100 */
+            background-color: #020617; /* Slate-950 */
+            color: #e2e8f0; /* Slate-200 */
         }
         
         /* 定義書法字體類別 */
@@ -38,23 +39,23 @@
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        /* 自定義滾動條 */
+        /* 自定義滾動條 (深色版) */
         ::-webkit-scrollbar {
             width: 8px;
         }
         ::-webkit-scrollbar-track {
-            background: transparent;
+            background: #0f172a; 
         }
         ::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
+            background: #334155;
             border-radius: 4px;
         }
         ::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
+            background: #475569;
         }
     </style>
 </head>
-<body class="text-slate-800">
+<body class="text-slate-200">
 
     <!-- React 應用程式掛載點 -->
     <div id="root"></div>
@@ -65,21 +66,7 @@
 
         // --- 內建圖示組件 (解決外部依賴報錯問題) ---
         const IconBase = ({ children, size = 24, className = "", ...props }) => (
-            <svg 
-                xmlns="http://www.w3.org/2000/svg" 
-                width={size} 
-                height={size} 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="2" 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                className={className} 
-                {...props}
-            >
-                {children}
-            </svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>{children}</svg>
         );
 
         const Zap = (props) => <IconBase {...props}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></IconBase>;
@@ -100,10 +87,204 @@
         const Crosshair = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10"></circle><line x1="22" y1="12" x2="18" y2="12"></line><line x1="6" y1="12" x2="2" y2="12"></line><line x1="12" y1="6" x2="12" y2="2"></line><line x1="12" y1="22" x2="12" y2="18"></line></IconBase>;
         const List = (props) => <IconBase {...props}><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></IconBase>;
         const Target = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></IconBase>;
+        const Calculator = (props) => <IconBase {...props}><rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect><line x1="8" y1="6" x2="16" y2="6"></line><line x1="16" y1="14" x2="16" y2="18"></line><path d="M16 10h.01"></path><path d="M12 10h.01"></path><path d="M8 10h.01"></path><path d="M12 14h.01"></path><path d="M8 14h.01"></path><path d="M12 18h.01"></path><path d="M8 18h.01"></path></IconBase>;
+        const Gauge = (props) => <IconBase {...props}><path d="M2 12h2"></path><path d="M20 12h2"></path><circle cx="12" cy="12" r="10"></circle><path d="M12 2v2"></path><path d="M12 12l2-2"></path></IconBase>;
+        const History = (props) => <IconBase {...props}><path d="M3 3v5h5"></path><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"></path><path d="M12 7v5l4 2"></path></IconBase>;
+        const Trash2 = (props) => <IconBase {...props}><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></IconBase>;
 
         // -----------------------------------------------------------
 
-        // 子組件：三明治配色風格的價位列
+        // 子組件：資金風控計算機 (含 R:R 計算) - Dark Mode
+        const RiskCalculator = ({ entryPrice }) => {
+            const [capital, setCapital] = useState(500000); 
+            const [riskPercent, setRiskPercent] = useState(2);
+            const [stopLoss, setStopLoss] = useState('');
+            const [targetPrice, setTargetPrice] = useState('');
+            const [calculated, setCalculated] = useState(null);
+
+            useEffect(() => {
+                if (capital && riskPercent && entryPrice && stopLoss) {
+                    const cap = parseFloat(capital);
+                    const risk = parseFloat(riskPercent) / 100;
+                    const entry = parseFloat(entryPrice);
+                    const sl = parseFloat(stopLoss);
+                    const tp = parseFloat(targetPrice);
+                    
+                    const riskAmount = cap * risk;
+                    const lossPerShare = Math.abs(entry - sl);
+                    
+                    if (lossPerShare === 0) { setCalculated(null); return; }
+
+                    const shares = Math.floor(riskAmount / lossPerShare);
+                    const lots = (shares / 1000).toFixed(1);
+                    const totalCost = shares * entry;
+                    const leverage = totalCost / cap;
+
+                    let rrRatio = 0;
+                    let profitAmount = 0;
+                    if (tp && tp !== entry) {
+                         const profitPerShare = Math.abs(tp - entry);
+                         profitAmount = profitPerShare * shares;
+                         rrRatio = (profitPerShare / lossPerShare).toFixed(2);
+                    }
+
+                    setCalculated({
+                        riskAmount: Math.round(riskAmount),
+                        shares: shares,
+                        lots: lots,
+                        lossPerShare: lossPerShare.toFixed(2),
+                        profitAmount: Math.round(profitAmount),
+                        rrRatio: rrRatio,
+                        isSafe: leverage <= 2.5
+                    });
+                } else {
+                    setCalculated(null);
+                }
+            }, [capital, riskPercent, entryPrice, stopLoss, targetPrice]);
+
+            return (
+                <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-sm mt-4">
+                    <div className="flex items-center gap-2 mb-4 pb-2 border-b border-slate-800">
+                        <Calculator size={20} className="text-blue-400" />
+                        <h3 className="font-bold text-lg text-slate-200">風控與風報比計算</h3>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-400 mb-1">總資金</label>
+                            <input type="number" value={capital} onChange={(e) => setCapital(e.target.value)} className="w-full p-2 border border-slate-700 rounded-lg text-sm font-bold text-slate-100 bg-slate-950 focus:border-blue-500 transition-colors outline-none" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-400 mb-1">單筆風險 %</label>
+                            <div className="relative">
+                                <input type="number" value={riskPercent} onChange={(e) => setRiskPercent(e.target.value)} className="w-full p-2 border border-slate-700 rounded-lg text-sm font-bold text-slate-100 bg-slate-950 focus:border-blue-500 transition-colors outline-none" />
+                                <span className="absolute right-3 top-2 text-slate-500 text-xs font-bold">%</span>
+                            </div>
+                        </div>
+                        <div className="col-span-2 grid grid-cols-3 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
+                             <div>
+                                <label className="block text-[10px] font-bold text-red-400 mb-1">停損 (SL)</label>
+                                <input type="number" value={stopLoss} onChange={(e) => setStopLoss(e.target.value)} className="w-full p-1.5 bg-slate-900 border border-red-900/50 rounded text-sm font-bold text-red-400 focus:ring-1 focus:ring-red-500 outline-none placeholder:text-slate-700" placeholder="必填" />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 mb-1">進場 (Entry)</label>
+                                <input type="number" value={entryPrice || ''} disabled className="w-full p-1.5 bg-slate-900 border border-slate-800 rounded text-sm font-bold text-slate-500 cursor-not-allowed" />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-green-400 mb-1">停利 (TP)</label>
+                                <input type="number" value={targetPrice} onChange={(e) => setTargetPrice(e.target.value)} className="w-full p-1.5 bg-slate-900 border border-green-900/50 rounded text-sm font-bold text-green-400 focus:ring-1 focus:ring-green-500 outline-none placeholder:text-slate-700" placeholder="選填" />
+                            </div>
+                        </div>
+                    </div>
+
+                    {calculated ? (
+                        <div className="space-y-3">
+                            <div className="bg-slate-950 rounded-xl p-3 grid grid-cols-2 gap-y-1 gap-x-4 text-sm border border-slate-800">
+                                <div className="text-slate-500 text-xs">建議部位:</div>
+                                <div className="text-right">
+                                    <span className="text-xl font-black text-blue-400">{calculated.lots}</span>
+                                    <span className="text-xs text-slate-500 ml-1">張</span>
+                                </div>
+                                <div className="text-slate-500 text-xs">最大虧損:</div>
+                                <div className="text-right font-bold text-red-400">-${calculated.riskAmount.toLocaleString()}</div>
+                                {calculated.rrRatio > 0 && (
+                                    <>
+                                        <div className="text-slate-500 text-xs">預期獲利:</div>
+                                        <div className="text-right font-bold text-green-400">+${calculated.profitAmount.toLocaleString()}</div>
+                                    </>
+                                )}
+                            </div>
+
+                            {/* 風報比條 */}
+                            {calculated.rrRatio > 0 && (
+                                <div className={`flex items-center gap-3 p-2 rounded-lg border ${calculated.rrRatio >= 2 ? 'bg-green-900/20 border-green-900/50' : calculated.rrRatio >= 1 ? 'bg-yellow-900/20 border-yellow-900/50' : 'bg-red-900/20 border-red-900/50'}`}>
+                                    <div className="font-bold text-xs whitespace-nowrap text-slate-300">風報比 R:R</div>
+                                    <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden flex">
+                                        <div style={{width: '33%'}} className="bg-red-500 h-full"></div>
+                                        <div style={{width: `${Math.min(calculated.rrRatio * 33, 67)}%`}} className="bg-green-500 h-full transition-all duration-500"></div>
+                                    </div>
+                                    <div className={`font-black text-lg ${calculated.rrRatio >= 2 ? 'text-green-400' : calculated.rrRatio >= 1 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                        1:{calculated.rrRatio}
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {!calculated.isSafe && (
+                                <div className="text-[10px] text-red-400 flex items-center gap-1 bg-red-900/20 p-1.5 rounded border border-red-900/50">
+                                    <AlertTriangle size={12} /> 警告：槓桿過大 (>2.5x)
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="text-center text-xs text-slate-500 py-2 bg-slate-950 rounded-lg">
+                            輸入「停損價格」以顯示建議倉位
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // 子組件：視覺化位階儀表 (Visual Gauge) - Dark Mode
+        const PriceGauge = ({ results, openPrice }) => {
+            if (!results) return null;
+            const open = parseFloat(openPrice);
+            if (isNaN(open)) return null;
+
+            const { ah, nh, cdp, nl, al } = results;
+            const prices = [parseFloat(al), parseFloat(nl), parseFloat(cdp), parseFloat(nh), parseFloat(ah)];
+            
+            const min = prices[0] - (prices[4] - prices[0]) * 0.2;
+            const max = prices[4] + (prices[4] - prices[0]) * 0.2;
+            const range = max - min;
+            
+            const getPercent = (p) => ((p - min) / range) * 100;
+            const openPercent = Math.min(Math.max(getPercent(open), 0), 100);
+
+            return (
+                <div className="mt-6 mb-2 px-2">
+                    <div className="flex items-center gap-2 mb-2 text-slate-400">
+                        <Gauge size={16} />
+                        <h4 className="text-xs font-bold uppercase tracking-wider">開盤位階儀表 (Price Gauge)</h4>
+                    </div>
+                    <div className="relative h-8 w-full select-none">
+                        {/* 背景軌道 */}
+                        <div className="absolute top-3 left-0 w-full h-2 bg-slate-700 rounded-full overflow-hidden flex">
+                            <div className="h-full bg-green-900 w-[20%] opacity-50"></div> 
+                            <div className="h-full bg-green-700 w-[20%] opacity-50"></div> 
+                            <div className="h-full bg-blue-900 w-[20%] opacity-50"></div> 
+                            <div className="h-full bg-red-700 w-[20%] opacity-50"></div> 
+                            <div className="h-full bg-red-900 w-[20%] opacity-50"></div> 
+                        </div>
+
+                        {/* 刻度點 */}
+                        {[
+                            { p: al, label: 'AL', c: 'bg-green-500' },
+                            { p: nl, label: 'NL', c: 'bg-green-400' },
+                            { p: cdp, label: 'CDP', c: 'bg-yellow-400' },
+                            { p: nh, label: 'NH', c: 'bg-red-400' },
+                            { p: ah, label: 'AH', c: 'bg-red-500' }
+                        ].map((item, idx) => (
+                            <div key={idx} className="absolute top-2 w-1 h-4 -ml-0.5 rounded-full z-10 flex flex-col items-center group cursor-default"
+                                style={{ left: `${getPercent(parseFloat(item.p))}%` }}>
+                                <div className={`w-1.5 h-4 ${item.c} rounded-full shadow-lg shadow-black`}></div>
+                                <div className="text-[9px] font-bold text-slate-400 mt-1 opacity-60 group-hover:opacity-100 transition-opacity">{item.label}</div>
+                            </div>
+                        ))}
+
+                        {/* 開盤價指標 */}
+                        <div 
+                            className="absolute top-0 -ml-2 w-4 h-full z-20 flex flex-col items-center transition-all duration-700 ease-out"
+                            style={{ left: `${openPercent}%` }}
+                        >
+                            <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-yellow-400 drop-shadow-md"></div>
+                            <div className="text-[10px] font-black text-slate-900 bg-yellow-400 px-1 rounded shadow-sm border border-yellow-500 -mt-0.5 whitespace-nowrap">Open</div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // 子組件：三明治配色風格的價位列 - Dark Mode Adjusted
         const LevelRow = ({ label, name, value, variant, isHighlighted, limits }) => {
             const numValue = parseFloat(value);
             const limitUp = limits ? parseFloat(limits.up) : Infinity;
@@ -112,34 +293,34 @@
             let warning = null;
             if (numValue > limitUp) {
                 warning = (
-                <span className="ml-2 text-[10px] bg-white text-red-600 px-1.5 py-0.5 rounded flex items-center gap-1 font-bold shadow-sm">
+                <span className="ml-2 text-[10px] bg-red-900 text-red-200 px-1.5 py-0.5 rounded flex items-center gap-1 font-bold shadow-sm border border-red-700">
                     ⚠️ 超漲停
                 </span>
                 );
             } else if (numValue < limitDown) {
                 warning = (
-                <span className="ml-2 text-[10px] bg-white text-green-700 px-1.5 py-0.5 rounded flex items-center gap-1 font-bold shadow-sm">
+                <span className="ml-2 text-[10px] bg-green-900 text-green-200 px-1.5 py-0.5 rounded flex items-center gap-1 font-bold shadow-sm border border-green-700">
                     ⚠️ 破跌停
                 </span>
                 );
             }
 
-            // 配色變體
+            // 配色變體 (Dark Mode)
             const styles = {
-                top: 'bg-red-600 text-white border-transparent shadow-md z-10', // AH
-                high: 'bg-white text-red-700 border-2 border-red-100 hover:border-red-300', // NH
-                center: 'bg-slate-800 text-yellow-400 border-4 border-slate-800 shadow-xl z-20 scale-[1.02]', // CDP
-                low: 'bg-white text-green-700 border-2 border-green-100 hover:border-green-300', // NL
-                bottom: 'bg-green-600 text-white border-transparent shadow-md z-10' // AL
+                top: 'bg-red-600 text-white border-transparent shadow-lg shadow-red-900/20 z-10', // AH
+                high: 'bg-slate-900 text-red-400 border-2 border-red-900/30 hover:border-red-700', // NH
+                center: 'bg-black text-yellow-400 border-2 border-slate-700 shadow-xl z-20 scale-[1.02] ring-1 ring-slate-600', // CDP
+                low: 'bg-slate-900 text-green-400 border-2 border-green-900/30 hover:border-green-700', // NL
+                bottom: 'bg-green-600 text-white border-transparent shadow-lg shadow-green-900/20 z-10' // AL
             };
 
             const currentStyle = styles[variant] || styles.high;
 
             return (
-                <div className={`flex items-center p-3 sm:p-4 rounded-xl transition-all duration-300 ${currentStyle} ${isHighlighted ? 'ring-4 ring-yellow-400 scale-[1.03] z-30 shadow-2xl' : ''}`}>
+                <div className={`flex items-center p-3 sm:p-4 rounded-xl transition-all duration-300 ${currentStyle} ${isHighlighted ? 'ring-2 ring-yellow-400 scale-[1.02] z-30 shadow-2xl shadow-yellow-900/20' : ''}`}>
                 <div className="w-12 sm:w-16 font-black text-xl sm:text-2xl opacity-90 tracking-tighter">{label}</div>
                 <div className="flex-1 min-w-0 pr-2">
-                    <div className="font-bold text-sm sm:text-base flex items-center truncate">
+                    <div className="font-bold text-sm sm:text-base flex items-center truncate opacity-90">
                     {name}
                     </div>
                 </div>
@@ -162,7 +343,7 @@
             );
         };
 
-        // 新增組件：盤前預測分析卡片
+        // 新增組件：盤前預測分析卡片 - Dark Mode
         const PremarketPrediction = ({ closePrice, results }) => {
             if (!results || !closePrice) return null;
 
@@ -175,60 +356,60 @@
                     title: '🚀 極度強勢 (Super Bullish)',
                     desc: '收盤價突破 AH，主力控盤意願極強。',
                     action: `明日開盤易直接開高，觀察是否守穩 AH (${ah})，若開太高需防獲利了結賣壓。`,
-                    color: 'bg-gradient-to-r from-purple-600 to-pink-600',
-                    textColor: 'text-white'
+                    color: 'bg-gradient-to-r from-purple-900 to-pink-900 border border-purple-700',
+                    textColor: 'text-purple-100'
                 };
             } else if (c > parseFloat(nh)) {
                 sentiment = {
                     title: '📈 強勢整理 (Bullish)',
                     desc: '收盤價站上 NH 壓力，多頭佔優。',
                     action: `明日開盤預期偏強，重點觀察 NH (${nh}) 支撐是否守穩，不破則續攻。`,
-                    color: 'bg-red-50 border-l-4 border-red-500',
-                    textColor: 'text-red-900'
+                    color: 'bg-red-950 border-l-4 border-red-500',
+                    textColor: 'text-red-200'
                 };
             } else if (c > parseFloat(cdp)) {
                 sentiment = {
                     title: '🐂 偏多震盪 (Mildly Bullish)',
                     desc: '收盤價在 CDP 之上，多方防守成功。',
                     action: `預期明日開在平盤或 CDP (${cdp}) 附近，觀察 CDP 支撐力道。`,
-                    color: 'bg-orange-50 border-l-4 border-orange-400',
-                    textColor: 'text-orange-900'
+                    color: 'bg-orange-950 border-l-4 border-orange-500',
+                    textColor: 'text-orange-200'
                 };
             } else if (c >= parseFloat(nl)) {
                 sentiment = {
                     title: '🐻 偏空震盪 (Mildly Bearish)',
                     desc: '收盤價落在 CDP 之下，空方略佔優勢。',
                     action: `預期明日開在平盤或微低，上方 CDP (${cdp}) 為反壓，需防守 NL。`,
-                    color: 'bg-blue-50 border-l-4 border-blue-400',
-                    textColor: 'text-blue-900'
+                    color: 'bg-blue-950 border-l-4 border-blue-500',
+                    textColor: 'text-blue-200'
                 };
             } else if (c >= parseFloat(al)) {
                 sentiment = {
                     title: '📉 弱勢探底 (Bearish)',
                     desc: '收盤價落入支撐區間邊緣，空頭力道增強。',
                     action: `明日易開低，重點觀察 NL (${nl}) 能否站回，否則恐測 AL。`,
-                    color: 'bg-green-50 border-l-4 border-green-500',
-                    textColor: 'text-green-900'
+                    color: 'bg-green-950 border-l-4 border-green-500',
+                    textColor: 'text-green-200'
                 };
             } else {
                 sentiment = {
                     title: '☠️ 極度弱勢 (Super Bearish)',
                     desc: '收盤價跌破 AL，籌碼潰散。',
                     action: `明日易直接開低或跳空，反彈不過 AL (${al}) 皆為空點。`,
-                    color: 'bg-gradient-to-r from-green-800 to-teal-900',
-                    textColor: 'text-white'
+                    color: 'bg-gradient-to-r from-green-900 to-teal-900 border border-green-700',
+                    textColor: 'text-green-100'
                 };
             }
 
             return (
                 <div className={`p-5 rounded-2xl shadow-lg mb-6 ${sentiment.color} ${sentiment.textColor} transition-all duration-500 animate-fade-in`}>
                     <div className="flex items-center gap-2 mb-3">
-                        <Target size={24} className={sentiment.textColor.includes('text-white') ? 'text-yellow-300' : 'text-current'} />
+                        <Target size={24} className={sentiment.textColor.includes('text-purple-100') ? 'text-yellow-300' : 'text-current'} />
                         <h3 className="font-bold text-xl tracking-tight">明日開盤預測</h3>
                     </div>
                     <div className="font-black text-2xl mb-2">{sentiment.title}</div>
-                    <p className="text-base opacity-90 mb-4 font-medium">{sentiment.desc}</p>
-                    <div className={`text-sm p-4 rounded-xl font-bold flex gap-3 items-start ${sentiment.textColor.includes('text-white') ? 'bg-white/20 backdrop-blur-sm' : 'bg-white/60'}`}>
+                    <p className="text-base opacity-80 mb-4 font-medium">{sentiment.desc}</p>
+                    <div className={`text-sm p-4 rounded-xl font-bold flex gap-3 items-start ${sentiment.textColor.includes('text-purple-100') ? 'bg-white/10 backdrop-blur-sm' : 'bg-slate-900/50'}`}>
                         <span className="shrink-0 mt-0.5 text-lg">💡</span>
                         <span className="leading-relaxed text-base">{sentiment.action}</span>
                     </div>
@@ -236,7 +417,7 @@
             );
         };
 
-        // 新增組件：盤前情境模擬列表
+        // 新增組件：盤前情境模擬列表 - Dark Mode
         const ScenarioSimulation = ({ results }) => {
             const [copied, setCopied] = useState(false);
             if (!results) return null;
@@ -268,45 +449,45 @@
                 condition: `開盤 > ${results.ah}`,
                 title: '超強勢 (追買)',
                 action: '回檔不破 AH/NH 順勢做多',
-                bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', icon: '🔴'
+                bg: 'bg-red-950/40', border: 'border-red-900/50', text: 'text-red-400', icon: '🔴'
                 },
                 {
                 condition: `${results.nh} < 開盤 ≤ ${results.ah}`,
                 title: '偏強勢 (觀察)',
                 action: '站穩 NH 做多，跌破 NH 短空',
-                bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', icon: '🟠'
+                bg: 'bg-orange-950/40', border: 'border-orange-900/50', text: 'text-orange-400', icon: '🟠'
                 },
                 {
                 condition: `${results.nl} ≤ 開盤 ≤ ${results.nh}`,
                 title: '震盪盤整 (逆勢)',
                 action: '區間操作：近 NH 賣，近 NL 買',
-                bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', icon: '🔵'
+                bg: 'bg-blue-950/40', border: 'border-blue-900/50', text: 'text-blue-400', icon: '🔵'
                 },
                 {
                 condition: `${results.al} ≤ 開盤 < ${results.nl}`,
                 title: '偏弱勢 (觀察)',
                 action: '反彈不過 NL 做空，跌破 AL 追空',
-                bg: 'bg-teal-50', border: 'border-teal-200', text: 'text-teal-700', icon: '🟢'
+                bg: 'bg-teal-950/40', border: 'border-teal-900/50', text: 'text-teal-400', icon: '🟢'
                 },
                 {
                 condition: `開盤 < ${results.al}`,
                 title: '超弱勢 (追空)',
                 action: '反彈不過 AL/NL 順勢做空',
-                bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-800', icon: '🟢'
+                bg: 'bg-green-950/40', border: 'border-green-900/50', text: 'text-green-400', icon: '🟢'
                 }
             ];
 
             return (
-                <div className="bg-slate-50 p-6 rounded-3xl border border-slate-200 shadow-inner">
+                <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-inner">
                 <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2 text-slate-700">
-                    <List size={22} className="text-indigo-600" />
+                    <div className="flex items-center gap-2 text-slate-300">
+                    <List size={22} className="text-indigo-400" />
                     <h3 className="font-bold text-xl">盤前模擬劇本</h3>
                     </div>
                     <button 
                     onClick={handleCopyScenarios}
                     className={`flex items-center gap-1.5 text-xs px-4 py-2 rounded-xl transition-all font-bold shadow-sm ${
-                        copied ? 'bg-green-100 text-green-700' : 'bg-white border border-slate-200 text-slate-500 hover:text-indigo-600 hover:border-indigo-300 hover:shadow'
+                        copied ? 'bg-green-900 text-green-200 border border-green-700' : 'bg-slate-800 border border-slate-700 text-slate-400 hover:text-indigo-400 hover:border-indigo-500 hover:bg-slate-750'
                     }`}
                     >
                     {copied ? <Check size={14} /> : <Copy size={14} />}
@@ -316,17 +497,17 @@
                 
                 <div className="flex flex-col gap-3">
                     {scenarios.map((s, idx) => (
-                    <div key={idx} className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-sm transition-transform hover:scale-[1.01] bg-white ${s.border}`}>
+                    <div key={idx} className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-sm transition-transform hover:scale-[1.01] ${s.bg} ${s.border}`}>
                         <div className={`font-bold font-mono sm:w-1/3 flex items-center gap-2 text-xs ${s.text}`}>
                         <span className="text-base">{s.icon}</span>
                         {s.condition}
                         </div>
                         <div className={`font-black sm:w-1/4 text-sm uppercase tracking-wider ${s.text}`}>{s.title}</div>
-                        <div className="text-xs sm:w-1/3 sm:text-right font-medium opacity-80 text-slate-600">{s.action}</div>
+                        <div className="text-xs sm:w-1/3 sm:text-right font-medium opacity-80 text-slate-400">{s.action}</div>
                     </div>
                     ))}
                 </div>
-                <div className="mt-4 text-xs text-center text-slate-400 font-medium">
+                <div className="mt-4 text-xs text-center text-slate-500 font-medium">
                     ※ 盤中請依實際開盤價位，執行上方對應劇本
                 </div>
                 </div>
@@ -335,14 +516,17 @@
 
         const CDPAnalyzer = () => {
             // 初始狀態
-            const [inputs, setInputs] = useState({
-                symbol: '', // 股票代號
-                prevOpen: '', 
-                high: '',
-                low: '',
-                close: '',
-                flatPrice: '', // 今日平盤價
-                open: '' 
+            const [inputs, setInputs] = useState(() => {
+                const saved = localStorage.getItem('cdp_inputs');
+                return saved ? JSON.parse(saved) : {
+                    symbol: '', prevOpen: '', high: '', low: '', close: '', flatPrice: '', open: ''
+                };
+            });
+            
+            // 歷史紀錄
+            const [history, setHistory] = useState(() => {
+                const savedHistory = localStorage.getItem('cdp_history');
+                return savedHistory ? JSON.parse(savedHistory) : [];
             });
 
             const [results, setResults] = useState(null);
@@ -350,21 +534,57 @@
             const [volatility, setVolatility] = useState(null);
             const [limits, setLimits] = useState(null);
             const [candle, setCandle] = useState(null);
-            const [copied, setCopied] = useState(false); // 複製狀態
-            const [inputError, setInputError] = useState(null); // 輸入錯誤狀態
-            const [showManual, setShowManual] = useState(false); // 顯示說明書
-
-            // 搜尋相關狀態
+            const [copied, setCopied] = useState(false);
+            const [inputError, setInputError] = useState(null);
+            const [showManual, setShowManual] = useState(false);
             const [suggestions, setSuggestions] = useState([]);
             const [showSuggestions, setShowSuggestions] = useState(false);
             const searchRef = useRef(null);
 
-            // 解析股票資料庫 (只執行一次)
+            useEffect(() => {
+                localStorage.setItem('cdp_inputs', JSON.stringify(inputs));
+            }, [inputs]);
+            
+            useEffect(() => {
+                localStorage.setItem('cdp_history', JSON.stringify(history));
+            }, [history]);
+
+            const addToHistory = (currentInputs) => {
+                if (!currentInputs.symbol || !currentInputs.close) return;
+                setHistory(prev => {
+                    const newItem = {
+                        symbol: currentInputs.symbol,
+                        close: currentInputs.close,
+                        high: currentInputs.high,
+                        low: currentInputs.low,
+                        timestamp: new Date().getTime()
+                    };
+                    const filtered = prev.filter(item => item.symbol.split(' ')[0] !== newItem.symbol.split(' ')[0]);
+                    return [newItem, ...filtered].slice(0, 6);
+                });
+            };
+            
+            const clearHistory = () => {
+                setHistory([]);
+            };
+            
+            const loadFromHistory = (item) => {
+                setInputs(prev => ({
+                    ...prev,
+                    symbol: item.symbol,
+                    high: item.high,
+                    low: item.low,
+                    close: item.close,
+                    prevOpen: '',
+                    flatPrice: '',
+                    open: ''
+                }));
+            };
+
             const stockList = useMemo(() => {
                 if (!RAW_STOCK_DATA) return [];
                 const lines = RAW_STOCK_DATA.trim().split('\n');
                 const startIndex = lines[0].includes('代號') ? 1 : 0;
-                
                 return lines.slice(startIndex).map(line => {
                 const parts = line.split('\t');
                 if (parts.length >= 2) {
@@ -378,7 +598,6 @@
                 }).filter(item => item !== null);
             }, []);
 
-            // 點擊外部關閉建議選單
             useEffect(() => {
                 const handleClickOutside = (event) => {
                 if (searchRef.current && !searchRef.current.contains(event.target)) {
@@ -391,7 +610,6 @@
                 };
             }, []);
 
-            // 處理數值輸入與防呆
             const handleInputChange = (e) => {
                 const { name, value } = e.target;
                 setInputs(prev => {
@@ -448,7 +666,9 @@
             };
 
             const handleReset = () => {
-                setInputs({ symbol: '', prevOpen: '', high: '', low: '', close: '', flatPrice: '', open: '' });
+                const empty = { symbol: '', prevOpen: '', high: '', low: '', close: '', flatPrice: '', open: '' };
+                setInputs(empty);
+                localStorage.setItem('cdp_inputs', JSON.stringify(empty));
                 setResults(null);
                 setStrategy(null);
                 setVolatility(null);
@@ -459,10 +679,8 @@
                 setSuggestions([]);
             };
 
-            // 複製文字功能
             const handleCopy = () => {
                 if (!results) return;
-                
                 const symbolText = inputs.symbol ? `【${inputs.symbol}】` : '';
                 const date = new Date().toLocaleDateString();
                 
@@ -486,7 +704,6 @@
                 if (strategy.action) text += `操作建議: ${strategy.action}\n`;
                 } else {
                 text += `\n【明日開盤預測】\n`;
-                // Add prediction text based on current inputs
                 const c = parseFloat(inputs.close);
                 if (c > parseFloat(results.ah)) text += `狀態: 極度強勢 (破 AH)\n建議: 明日易開高，防獲利賣壓\n`;
                 else if (c > parseFloat(results.nh)) text += `狀態: 強勢整理 (站上 NH)\n建議: 明日觀察 NH 支撐\n`;
@@ -518,7 +735,6 @@
                 document.body.removeChild(textArea);
             };
 
-            // 核心計算邏輯
             useEffect(() => {
                 const po = parseFloat(inputs.prevOpen);
                 const h = parseFloat(inputs.high);
@@ -530,6 +746,11 @@
                 if (h < l) return;
 
                 if (h && l && c) {
+                if (inputs.symbol) {
+                   const timer = setTimeout(() => addToHistory(inputs), 2000);
+                   return () => clearTimeout(timer);
+                }
+
                 const limitUpVal = refPrice * 1.10;
                 const limitDownVal = refPrice * 0.90;
                 setLimits({
@@ -545,14 +766,14 @@
                     const bodyPercent = (bodySize / po) * 100;
                     
                     let typeText = '十字線';
-                    let typeColor = 'text-gray-500 bg-gray-100 border-gray-200';
+                    let typeColor = 'text-gray-400 bg-gray-800 border-gray-700';
                     
                     if (isRed) {
                         typeText = '昨日收紅';
-                        typeColor = 'text-red-600 bg-red-50 border-red-200';
+                        typeColor = 'text-red-400 bg-red-950/50 border-red-900';
                     } else if (isGreen) {
                         typeText = '昨日收黑';
-                        typeColor = 'text-green-600 bg-green-50 border-green-200';
+                        typeColor = 'text-green-400 bg-green-950/50 border-green-900';
                     }
 
                     setCandle({
@@ -601,7 +822,7 @@
                             desc: '開盤即漲停，多頭最強勢表現。',
                             action: '若未鎖死可小量追，若鎖死則排隊或觀望。',
                             sop: '若中途打開爆量不鎖回，多單停利出場；若鎖死則續抱。',
-                            color: 'from-pink-500 to-rose-600 text-white',
+                            color: 'from-pink-600 to-rose-700 text-white shadow-pink-900/50',
                             icon: <ArrowUpCircle className="w-10 h-10 text-yellow-300" />
                         }
                     } else if (o <= limitDownVal) {
@@ -610,7 +831,7 @@
                             desc: '開盤即跌停，空方最強勢表現。',
                             action: '嚴禁接刀，觀察是否打開反彈。',
                             sop: '不做多。若手中有多單，打開時建議停損離場。',
-                            color: 'from-emerald-600 to-green-700 text-white',
+                            color: 'from-emerald-800 to-green-900 text-white shadow-green-900/50',
                             icon: <ArrowDownCircle className="w-10 h-10 text-white" />
                         }
                     } else if (o > ah) {
@@ -619,7 +840,7 @@
                         desc: '跳空突破 AH 壓力，行情極強。',
                         action: '回檔不破 AH/NH 順勢做多，勿放空。',
                         sop: '開盤後等待第一波回測，若不破開盤價或 AH，可進場做多，停損設 AH 下方。',
-                        color: 'from-red-600 to-orange-600 text-white shadow-red-200',
+                        color: 'from-red-700 to-orange-700 text-white shadow-red-900/50',
                         icon: <TrendingUp className="w-10 h-10 text-white" />
                     };
                     } else if (o > nh && o <= ah) {
@@ -628,7 +849,7 @@
                         desc: '開在壓力區間，上方有 AH 壓力。',
                         action: '站穩 NH 做多，跌破 NH 則短空。',
                         sop: '觀察開盤能否站穩 NH，站穩則目標看 AH；若跌破開盤價或 NH，則可能回測 CDP。',
-                        color: 'from-orange-400 to-amber-500 text-white',
+                        color: 'from-orange-600 to-amber-700 text-white shadow-orange-900/50',
                         icon: <TrendingUp className="w-10 h-10 text-white" />
                     };
                     } else if (o >= nl && o <= nh) {
@@ -637,7 +858,7 @@
                         desc: '開在 CDP 中軸附近，標準盤整。',
                         action: '區間操作：接近 NH 賣，接近 NL 買。',
                         sop: '不追高殺低。等待價格來到 NH 附近出現上影線做空，或來到 NL 附近出現下影線做多。',
-                        color: 'from-blue-500 to-indigo-600 text-white',
+                        color: 'from-blue-700 to-indigo-800 text-white shadow-blue-900/50',
                         icon: <Activity className="w-10 h-10 text-white" />
                     };
                     } else if (o < nl && o >= al) {
@@ -646,7 +867,7 @@
                         desc: '開在支撐區間，空方力道強。',
                         action: '反彈不過 NL 做空，跌破 AL 追空。',
                         sop: '觀察開盤是否跌破 NL，反彈測試 NL 不過可空；若站上 NL 則暫時觀望，目標看 CDP。',
-                        color: 'from-teal-500 to-emerald-600 text-white',
+                        color: 'from-teal-700 to-emerald-800 text-white shadow-teal-900/50',
                         icon: <TrendingDown className="w-10 h-10 text-white" />
                     };
                     } else if (o < al) {
@@ -655,7 +876,7 @@
                         desc: '跳空跌破 AL 支撐，行情極弱。',
                         action: '反彈不過 AL/NL 順勢做空，勿摸底。',
                         sop: '開盤後等待反彈測試 AL，若不過 AL 或開盤價，可進場放空，停損設 AL 上方。',
-                        color: 'from-green-700 to-emerald-800 text-white',
+                        color: 'from-green-800 to-emerald-900 text-white shadow-green-900/50',
                         icon: <TrendingDown className="w-10 h-10 text-white" />
                     };
                     }
@@ -669,25 +890,25 @@
             return (
                 <div className="min-h-screen font-sans">
                     
-                    {/* Header Bar */}
-                    <div className="bg-gradient-to-r from-indigo-900 via-purple-900 to-slate-900 text-white py-4 px-6 shadow-xl sticky top-0 z-50">
+                    {/* Header Bar - Dark Mode */}
+                    <div className="bg-slate-900 border-b border-slate-800 py-4 px-6 shadow-xl sticky top-0 z-50">
                         <div className="max-w-7xl mx-auto flex justify-between items-center">
                             <h1 className="text-xl md:text-2xl font-black flex items-center gap-3 tracking-tight">
                                 <Zap className="text-yellow-400 fill-yellow-400" size={28} />
-                                <span className="bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-300 font-calligraphy tracking-wider">
+                                <span className="bg-clip-text text-transparent bg-gradient-to-r from-slate-100 to-slate-400 font-calligraphy tracking-wider">
                                     萊恩會漲CDP戰法
                                 </span>
                             </h1>
                             <div className="flex gap-3">
                                 <button 
                                     onClick={() => setShowManual(true)}
-                                    className="hidden md:flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-4 py-2 rounded-xl text-sm font-bold transition-all border border-white/10 backdrop-blur-sm"
+                                    className="hidden md:flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl text-sm font-bold transition-all border border-slate-700 text-slate-300"
                                 >
                                     <BookOpen size={18} className="text-yellow-400" /> 說明書
                                 </button>
                                 <button 
                                     onClick={handleReset}
-                                    className="flex items-center gap-1 bg-white/10 hover:bg-white/20 px-3 py-2 rounded-xl text-sm transition-colors text-white border border-white/10"
+                                    className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded-xl text-sm transition-colors text-slate-300 border border-slate-700"
                                 >
                                     <RotateCcw size={18} /> 重置
                                 </button>
@@ -695,8 +916,8 @@
                                     onClick={handleCopy}
                                     disabled={!results}
                                     className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 ${
-                                        !results ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 
-                                        copied ? 'bg-green-500 text-white' : 'bg-yellow-400 hover:bg-yellow-300 text-slate-900'
+                                        !results ? 'bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700' : 
+                                        copied ? 'bg-green-600 text-white border border-green-500' : 'bg-yellow-500 hover:bg-yellow-400 text-slate-900 shadow-yellow-500/20'
                                     }`}
                                 >
                                     {copied ? <Check size={18} /> : <Copy size={18} />}
@@ -709,14 +930,14 @@
                     <div className="max-w-7xl mx-auto p-4 md:p-8">
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                         
-                            {/* 左側：輸入面板 (Input Panel) */}
+                            {/* 左側：輸入面板 - Dark Mode */}
                             <div className="col-span-1 lg:col-span-4 flex flex-col gap-6">
-                                <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
+                                <div className="bg-slate-900 rounded-3xl shadow-2xl border border-slate-800 overflow-hidden">
                                     <div className="p-6">
-                                        <div className="mb-6" ref={searchRef}>
-                                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">股票代號 (Symbol)</label>
+                                        <div className="mb-4" ref={searchRef}>
+                                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">股票代號 (Symbol)</label>
                                             <div className="relative group">
-                                                <Search className="absolute left-3 top-3.5 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={20} />
+                                                <Search className="absolute left-3 top-3.5 text-slate-500 group-focus-within:text-blue-400 transition-colors" size={20} />
                                                 <input
                                                     type="text"
                                                     name="symbol"
@@ -726,30 +947,30 @@
                                                     onFocus={() => { if(inputs.symbol) setShowSuggestions(true); }}
                                                     placeholder="輸入代號 (如: 2330)"
                                                     autoComplete="off"
-                                                    className="w-full pl-10 pr-4 py-3 border-2 border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none transition font-bold text-slate-800 shadow-sm bg-slate-50"
+                                                    className="w-full pl-10 pr-4 py-3 border border-slate-700 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition font-bold text-slate-100 shadow-sm bg-slate-950 placeholder:text-slate-600"
                                                 />
                                                 {inputs.symbol && (
                                                 <button 
                                                     onClick={clearSymbol}
-                                                    className="absolute right-3 top-3.5 text-slate-400 hover:text-slate-600 p-1"
+                                                    className="absolute right-3 top-3.5 text-slate-500 hover:text-slate-300 p-1"
                                                 >
                                                     <X size={16} />
                                                 </button>
                                                 )}
-                                                {/* 搜尋建議 */}
+                                                {/* 搜尋建議 - Dark Mode */}
                                                 {showSuggestions && suggestions.length > 0 && (
-                                                <div className="absolute z-50 w-full mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl max-h-60 overflow-y-auto overflow-hidden">
+                                                <div className="absolute z-50 w-full mt-2 bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl max-h-60 overflow-y-auto overflow-hidden">
                                                     {suggestions.map((stock) => (
                                                     <div
                                                         key={stock.code}
                                                         onClick={() => handleSelectStock(stock)}
-                                                        className="px-5 py-3 hover:bg-indigo-50 cursor-pointer border-b border-slate-50 last:border-0 flex justify-between items-center group"
+                                                        className="px-5 py-3 hover:bg-slate-700 cursor-pointer border-b border-slate-700 last:border-0 flex justify-between items-center group"
                                                     >
                                                         <div>
-                                                        <span className="font-black text-indigo-600 mr-2 text-lg">{stock.code}</span>
-                                                        <span className="text-slate-700 font-medium">{stock.name}</span>
+                                                        <span className="font-black text-blue-400 mr-2 text-lg">{stock.code}</span>
+                                                        <span className="text-slate-300 font-medium">{stock.name}</span>
                                                         </div>
-                                                        <span className="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-lg group-hover:bg-indigo-200 group-hover:text-indigo-700 transition-colors">
+                                                        <span className="text-xs text-slate-400 bg-slate-900 px-2 py-1 rounded-lg group-hover:bg-blue-900/30 group-hover:text-blue-300 transition-colors">
                                                         {stock.industry}
                                                         </span>
                                                     </div>
@@ -759,54 +980,74 @@
                                             </div>
                                         </div>
 
+                                        {/* 歷史紀錄 Chips - Dark Mode */}
+                                        {history.length > 0 && (
+                                            <div className="mb-6 flex flex-wrap gap-2">
+                                                <div className="flex items-center gap-1 text-xs text-slate-500 font-bold mb-1 w-full">
+                                                    <History size={12} /> 最近查詢
+                                                    <button onClick={clearHistory} className="ml-auto hover:text-red-400"><Trash2 size={12}/></button>
+                                                </div>
+                                                {history.map((item, idx) => (
+                                                    <button
+                                                        key={idx}
+                                                        onClick={() => loadFromHistory(item)}
+                                                        className="px-2 py-1 bg-slate-800 hover:bg-blue-900/40 hover:text-blue-300 text-slate-400 text-xs rounded-md transition-colors font-bold truncate max-w-[120px] border border-slate-700 hover:border-blue-800"
+                                                        title={`昨收 ${item.close}`}
+                                                    >
+                                                        {item.symbol.split(' ')[0]}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+
                                         <div className="space-y-4">
-                                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                            <div className="bg-slate-800/50 p-4 rounded-2xl border border-slate-700">
                                                 <div className="flex items-center gap-2 mb-3">
-                                                    <span className="flex items-center justify-center w-6 h-6 bg-slate-800 text-white rounded-full text-xs font-bold">1</span>
-                                                    <h2 className="font-bold text-slate-700">昨日數據 (OHLC)</h2>
+                                                    <span className="flex items-center justify-center w-6 h-6 bg-slate-700 text-slate-300 rounded-full text-xs font-bold border border-slate-600">1</span>
+                                                    <h2 className="font-bold text-slate-300">昨日數據 (OHLC)</h2>
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-3 mb-3">
                                                     <div>
-                                                        <label className="block text-xs font-bold text-slate-400 mb-1">昨日開盤</label>
-                                                        <input type="number" name="prevOpen" value={inputs.prevOpen} onChange={handleInputChange} className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-200 outline-none text-sm font-medium bg-white" placeholder="Open" />
+                                                        <label className="block text-xs font-bold text-slate-500 mb-1">昨日開盤</label>
+                                                        <input type="number" name="prevOpen" value={inputs.prevOpen} onChange={handleInputChange} className="w-full p-2.5 border border-slate-700 rounded-xl focus:ring-1 focus:ring-blue-500 outline-none text-sm font-medium bg-slate-950 text-slate-200 placeholder:text-slate-700" placeholder="Open" />
                                                     </div>
                                                     <div>
-                                                        <label className="block text-xs font-bold text-slate-400 mb-1">昨日收盤</label>
-                                                        <input type="number" name="close" value={inputs.close} onChange={handleInputChange} className="w-full p-2.5 border-2 border-slate-300 rounded-xl focus:ring-2 focus:ring-slate-200 outline-none text-sm font-bold bg-white" placeholder="Close" />
+                                                        <label className="block text-xs font-bold text-slate-500 mb-1">昨日收盤</label>
+                                                        <input type="number" name="close" value={inputs.close} onChange={handleInputChange} className="w-full p-2.5 border-2 border-slate-700 rounded-xl focus:ring-1 focus:ring-blue-500 outline-none text-sm font-bold bg-slate-950 text-slate-100 placeholder:text-slate-700" placeholder="Close" />
                                                     </div>
                                                 </div>
                                                 
                                                 <div className="mb-3">
-                                                    <label className="block text-xs font-bold text-slate-400 mb-1 flex justify-between">
+                                                    <label className="block text-xs font-bold text-slate-500 mb-1 flex justify-between">
                                                         <span>昨日平盤價 (Ref.)</span>
-                                                        <span className="text-[10px] text-indigo-500 bg-indigo-50 px-1.5 rounded">若除權息請修改</span>
+                                                        <span className="text-[10px] text-blue-400 bg-blue-900/20 px-1.5 rounded border border-blue-900/50">若除權息請修改</span>
                                                     </label>
-                                                    <input type="number" name="flatPrice" value={inputs.flatPrice} onChange={handleInputChange} className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-slate-200 outline-none text-sm font-bold text-slate-600 bg-white placeholder:text-slate-300" placeholder={inputs.close ? `預設: ${inputs.close}` : '同昨收'} />
+                                                    <input type="number" name="flatPrice" value={inputs.flatPrice} onChange={handleInputChange} className="w-full p-2.5 border border-slate-700 rounded-xl focus:ring-1 focus:ring-blue-500 outline-none text-sm font-bold text-slate-400 bg-slate-950 placeholder:text-slate-700" placeholder={inputs.close ? `預設: ${inputs.close}` : '同昨收'} />
                                                 </div>
 
                                                 <div className="grid grid-cols-2 gap-3">
                                                     <div>
-                                                        <label className="block text-xs font-bold text-slate-400 mb-1">昨日最高</label>
-                                                        <input type="number" name="high" value={inputs.high} onChange={handleInputChange} className={`w-full p-2.5 border rounded-xl focus:ring-2 outline-none text-red-600 font-bold text-sm bg-white ${inputError ? 'border-red-500' : 'border-slate-200'}`} placeholder="High" />
+                                                        <label className="block text-xs font-bold text-slate-500 mb-1">昨日最高</label>
+                                                        <input type="number" name="high" value={inputs.high} onChange={handleInputChange} className={`w-full p-2.5 border rounded-xl focus:ring-1 outline-none text-red-400 font-bold text-sm bg-slate-950 placeholder:text-slate-700 ${inputError ? 'border-red-900 focus:ring-red-500' : 'border-slate-700 focus:ring-blue-500'}`} placeholder="High" />
                                                     </div>
                                                     <div>
-                                                        <label className="block text-xs font-bold text-slate-400 mb-1">昨日最低</label>
-                                                        <input type="number" name="low" value={inputs.low} onChange={handleInputChange} className={`w-full p-2.5 border rounded-xl focus:ring-2 outline-none text-green-600 font-bold text-sm bg-white ${inputError ? 'border-red-500' : 'border-slate-200'}`} placeholder="Low" />
+                                                        <label className="block text-xs font-bold text-slate-500 mb-1">昨日最低</label>
+                                                        <input type="number" name="low" value={inputs.low} onChange={handleInputChange} className={`w-full p-2.5 border rounded-xl focus:ring-1 outline-none text-green-400 font-bold text-sm bg-slate-950 placeholder:text-slate-700 ${inputError ? 'border-red-900 focus:ring-red-500' : 'border-slate-700 focus:ring-blue-500'}`} placeholder="Low" />
                                                     </div>
                                                 </div>
                                             </div>
                                             
-                                            {/* 今日開盤輸入 */}
-                                            <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-100 relative overflow-hidden">
-                                                <div className="absolute top-0 right-0 p-4 opacity-5">
+                                            {/* 今日開盤輸入 - Dark Mode */}
+                                            <div className="bg-indigo-950/30 p-5 rounded-2xl border border-indigo-900/50 relative overflow-hidden">
+                                                <div className="absolute top-0 right-0 p-4 opacity-10 text-indigo-500">
                                                     <Zap size={100} />
                                                 </div>
                                                 <div className="flex items-center justify-between mb-2 relative z-10">
                                                     <div className="flex items-center gap-2">
                                                         <span className="flex items-center justify-center w-6 h-6 bg-indigo-600 text-white rounded-full text-xs font-bold">2</span>
-                                                        <label className="text-sm font-bold text-indigo-900">今日開盤價 (Open)</label>
+                                                        <label className="text-sm font-bold text-indigo-300">今日開盤價 (Open)</label>
                                                     </div>
-                                                    <span className="text-[10px] bg-white text-indigo-600 px-2 py-0.5 rounded-full font-bold shadow-sm">SOP 觸發</span>
+                                                    <span className="text-[10px] bg-indigo-900 text-indigo-300 px-2 py-0.5 rounded-full font-bold shadow-sm border border-indigo-700">SOP 觸發</span>
                                                 </div>
                                                 <input
                                                     type="number"
@@ -814,15 +1055,15 @@
                                                     value={inputs.open}
                                                     onChange={handleInputChange}
                                                     placeholder="輸入開盤..."
-                                                    className="w-full p-3 border-2 border-indigo-200 bg-white text-indigo-900 rounded-xl focus:ring-4 focus:ring-indigo-200 focus:border-indigo-600 outline-none transition font-black text-2xl shadow-sm placeholder:text-slate-300 relative z-10"
+                                                    className="w-full p-3 border-2 border-indigo-900/50 bg-slate-950 text-indigo-300 rounded-xl focus:ring-2 focus:ring-indigo-600 focus:border-indigo-500 outline-none transition font-black text-2xl shadow-sm placeholder:text-slate-700 relative z-10"
                                                 />
                                             </div>
                                         </div>
 
-                                        {/* 底部資訊 */}
+                                        {/* 底部資訊 - Dark Mode */}
                                         <div className="mt-6 space-y-3">
                                             {candle && (
-                                                <div className={`p-3 rounded-xl text-xs flex items-center justify-center gap-2 border-2 bg-white ${candle.color.replace('border-red-200', 'border-red-100').replace('border-green-200', 'border-green-100')}`}>
+                                                <div className={`p-3 rounded-xl text-xs flex items-center justify-center gap-2 border ${candle.color}`}>
                                                     <BarChart2 size={16} />
                                                     <span className="font-bold text-sm">{candle.text}</span>
                                                     <span className="opacity-75">({candle.body}%)</span>
@@ -830,22 +1071,22 @@
                                             )}
                                             {limits && (
                                                 <div className="grid grid-cols-3 gap-2">
-                                                    <div className="p-2 bg-red-50 text-red-700 border border-red-100 rounded-xl text-center">
+                                                    <div className="p-2 bg-red-950/30 text-red-400 border border-red-900/50 rounded-xl text-center">
                                                         <div className="text-[10px] font-bold opacity-60">漲停</div>
                                                         <div className="font-black text-sm">{limits.up}</div>
                                                     </div>
-                                                    <div className="p-2 bg-slate-50 text-slate-600 border border-slate-200 rounded-xl text-center">
+                                                    <div className="p-2 bg-slate-800 text-slate-400 border border-slate-700 rounded-xl text-center">
                                                         <div className="text-[10px] font-bold opacity-60">平盤</div>
                                                         <div className="font-black text-sm">{limits.flat}</div>
                                                     </div>
-                                                    <div className="p-2 bg-green-50 text-green-700 border border-green-100 rounded-xl text-center">
+                                                    <div className="p-2 bg-green-950/30 text-green-400 border border-green-900/50 rounded-xl text-center">
                                                         <div className="text-[10px] font-bold opacity-60">跌停</div>
                                                         <div className="font-black text-sm">{limits.down}</div>
                                                     </div>
                                                 </div>
                                             )}
                                             {volatility && (
-                                                <div className={`p-3 rounded-xl text-xs flex items-center gap-3 border ${volatility.status === 'low' ? 'bg-amber-50 text-amber-800 border-amber-200' : volatility.status === 'high' ? 'bg-purple-50 text-purple-800 border-purple-200' : 'bg-white text-slate-500 border-slate-200'}`}>
+                                                <div className={`p-3 rounded-xl text-xs flex items-center gap-3 border ${volatility.status === 'low' ? 'bg-amber-950/30 text-amber-500 border-amber-900/50' : volatility.status === 'high' ? 'bg-purple-950/30 text-purple-400 border-purple-900/50' : 'bg-slate-800 text-slate-500 border-slate-700'}`}>
                                                     <Activity size={18} className="shrink-0" />
                                                     <div>
                                                         <span className="font-bold">振幅 {volatility.percent}%：</span>{volatility.text}
@@ -857,16 +1098,16 @@
                                 </div>
                             </div>
 
-                            {/* 右側：結果面板 (Results Panel) */}
+                            {/* 右側：結果面板 - Dark Mode */}
                             <div className="col-span-1 lg:col-span-8">
-                                <div className="bg-white rounded-3xl shadow-xl border border-slate-100 h-full flex flex-col p-6 md:p-8">
+                                <div className="bg-slate-900 rounded-3xl shadow-2xl border border-slate-800 h-full flex flex-col p-6 md:p-8">
                                     {!results ? (
-                                        <div className="flex-1 flex flex-col items-center justify-center text-slate-300 py-12">
-                                            <div className="bg-slate-50 p-8 rounded-full mb-6 animate-pulse">
-                                                <Activity size={80} className="text-slate-200" />
+                                        <div className="flex-1 flex flex-col items-center justify-center text-slate-500 py-12">
+                                            <div className="bg-slate-800 p-8 rounded-full mb-6 animate-pulse">
+                                                <Activity size={80} className="text-slate-600" />
                                             </div>
-                                            <p className="text-2xl font-bold text-slate-400">等待數據輸入...</p>
-                                            <p className="text-sm mt-2 text-slate-400">請在左側輸入昨日數據開始分析</p>
+                                            <p className="text-2xl font-bold text-slate-500">等待數據輸入...</p>
+                                            <p className="text-sm mt-2 text-slate-600">請在左側輸入昨日數據開始分析</p>
                                         </div>
                                     ) : (
                                         <div className="flex flex-col gap-6 h-full">
@@ -876,14 +1117,14 @@
                                                 {!strategy && <PremarketPrediction closePrice={inputs.close} results={results} />}
 
                                                 {strategy && (
-                                                    <div className={`p-6 md:p-8 rounded-3xl shadow-xl bg-gradient-to-br ${strategy.color} text-white relative overflow-hidden group transition-all duration-500`}>
+                                                    <div className={`p-6 md:p-8 rounded-3xl shadow-xl bg-gradient-to-br ${strategy.color} text-white relative overflow-hidden group transition-all duration-500 border border-white/10`}>
                                                         <div className="absolute top-0 right-0 p-4 opacity-10 transform translate-x-8 -translate-y-4 group-hover:scale-110 transition-transform duration-500">
                                                             {strategy.icon}
                                                         </div>
                                                         <div className="flex flex-col md:flex-row items-start justify-between relative z-10 gap-4">
                                                             <div>
                                                                 <div className="flex items-center gap-3 mb-3">
-                                                                    <div className="p-2.5 bg-white/20 rounded-xl backdrop-blur-sm shadow-inner">
+                                                                    <div className="p-2.5 bg-white/10 rounded-xl backdrop-blur-sm shadow-inner border border-white/10">
                                                                         {strategy.icon}
                                                                     </div>
                                                                     <h3 className="text-2xl md:text-3xl font-black tracking-tight drop-shadow-sm">{strategy.title}</h3>
@@ -892,7 +1133,7 @@
                                                             </div>
                                                         </div>
                                                         <div className="mt-6 space-y-3 relative z-10">
-                                                            <div className="bg-white/10 backdrop-blur-md p-4 rounded-2xl border border-white/20 flex gap-4 items-start shadow-inner">
+                                                            <div className="bg-black/20 backdrop-blur-md p-4 rounded-2xl border border-white/10 flex gap-4 items-start shadow-inner">
                                                                 <Crosshair size={24} className="shrink-0 mt-0.5 text-yellow-300" />
                                                                 <div>
                                                                     <span className="font-bold text-yellow-300 uppercase tracking-wider text-xs block mb-1">Action SOP</span>
@@ -911,13 +1152,17 @@
                                             {/* 2. 關鍵價位地圖 */}
                                             <div className="flex-1 flex flex-col justify-center py-2">
                                                 <div className="flex justify-between items-end mb-4 px-1">
-                                                    <h3 className="font-black text-slate-800 text-xl flex items-center gap-3">
-                                                        <span className="w-1.5 h-8 bg-indigo-600 rounded-full"></span>
+                                                    <h3 className="font-black text-slate-200 text-xl flex items-center gap-3">
+                                                        <span className="w-1.5 h-8 bg-indigo-500 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)]"></span>
                                                         關鍵價位地圖
                                                     </h3>
-                                                    <span className="text-xs font-bold text-slate-400 bg-slate-50 px-3 py-1.5 rounded-lg">※ 嚴守停損</span>
+                                                    <span className="text-xs font-bold text-slate-400 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">※ 嚴守停損</span>
                                                 </div>
-                                                <div className="grid gap-3">
+                                                
+                                                {/* 儀表板放在這裡 */}
+                                                <PriceGauge results={results} openPrice={inputs.open} />
+
+                                                <div className="grid gap-3 mt-4">
                                                     <LevelRow label="AH" name="突破追買點" value={results.ah} variant="top" isHighlighted={inputs.open && parseFloat(inputs.open) > parseFloat(results.ah)} limits={limits} />
                                                     <LevelRow label="NH" name="壓力賣出點" value={results.nh} variant="high" isHighlighted={inputs.open && parseFloat(inputs.open) > parseFloat(results.nh) && parseFloat(inputs.open) <= parseFloat(results.ah)} limits={limits} />
                                                     <LevelRow label="CDP" name="多空分界線" value={results.cdp} variant="center" isHighlighted={false} limits={limits} />
@@ -926,7 +1171,10 @@
                                                 </div>
                                             </div>
 
-                                            {/* 3. 盤前模擬 (僅在無開盤價時顯示在底部) */}
+                                            {/* 3. 風險計算機 */}
+                                            <RiskCalculator entryPrice={inputs.open} limits={limits} />
+
+                                            {/* 4. 盤前模擬 */}
                                             {!strategy && <ScenarioSimulation results={results} />}
 
                                         </div>
@@ -936,11 +1184,11 @@
                         </div>
                     </div>
 
-                    {/* 說明書 Modal */}
+                    {/* 說明書 Modal - Dark Mode */}
                     {showManual && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-fade-in">
-                            <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-                                <div className="bg-gradient-to-r from-indigo-900 to-purple-900 text-white p-5 flex justify-between items-center">
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+                            <div className="bg-slate-900 w-full max-w-2xl rounded-3xl shadow-2xl border border-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
+                                <div className="bg-gradient-to-r from-indigo-900 to-purple-900 text-white p-5 flex justify-between items-center border-b border-white/10">
                                     <h2 className="text-xl font-bold flex items-center gap-2">
                                         <BookOpen size={20} className="text-yellow-400"/>
                                         戰法操作說明書
@@ -949,73 +1197,73 @@
                                         <X size={24} />
                                     </button>
                                 </div>
-                                <div className="p-8 overflow-y-auto space-y-8">
+                                <div className="p-8 overflow-y-auto space-y-8 text-slate-300">
                                     <section>
-                                        <h3 className="font-black text-indigo-900 mb-3 text-lg flex items-center gap-2">
-                                            <span className="bg-indigo-100 text-indigo-600 w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span>
+                                        <h3 className="font-black text-indigo-400 mb-3 text-lg flex items-center gap-2">
+                                            <span className="bg-indigo-900/50 text-indigo-300 w-6 h-6 rounded-full flex items-center justify-center text-xs border border-indigo-700">1</span>
                                             盤前準備
                                         </h3>
-                                        <p className="text-slate-600 mb-2 pl-8">輸入目標個股昨日的 <span className="font-bold text-slate-800 bg-slate-100 px-1 rounded">High / Low / Close</span>。</p>
-                                        <div className="bg-blue-50 p-4 rounded-xl text-sm text-blue-800 ml-8 border border-blue-100">
+                                        <p className="text-slate-400 mb-2 pl-8">輸入目標個股昨日的 <span className="font-bold text-slate-200 bg-slate-800 px-1 rounded border border-slate-700">High / Low / Close</span>。</p>
+                                        <div className="bg-blue-900/20 p-4 rounded-xl text-sm text-blue-300 ml-8 border border-blue-900/50">
                                             💡 系統會自動算出今日的 5 個關鍵價位，這是今天的作戰地圖。
                                         </div>
                                     </section>
                                     <section>
-                                        <h3 className="font-black text-indigo-900 mb-3 text-lg flex items-center gap-2">
-                                            <span className="bg-indigo-100 text-indigo-600 w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span>
+                                        <h3 className="font-black text-indigo-400 mb-3 text-lg flex items-center gap-2">
+                                            <span className="bg-indigo-900/50 text-indigo-300 w-6 h-6 rounded-full flex items-center justify-center text-xs border border-indigo-700">2</span>
                                             認識五大關卡
                                         </h3>
                                         <div className="space-y-2 ml-8 text-sm">
-                                            <div className="flex items-center gap-3 p-2 rounded hover:bg-slate-50">
+                                            <div className="flex items-center gap-3 p-2 rounded hover:bg-slate-800">
                                                 <span className="font-bold bg-red-600 text-white px-2 py-0.5 rounded text-xs w-12 text-center">AH</span>
-                                                <span className="text-slate-700"><span className="font-bold text-red-600">最強勢</span>：突破追買，行情極強。</span>
+                                                <span className="text-slate-300"><span className="font-bold text-red-400">最強勢</span>：突破追買，行情極強。</span>
                                             </div>
-                                            <div className="flex items-center gap-3 p-2 rounded hover:bg-slate-50">
-                                                <span className="font-bold border border-red-500 text-red-600 px-2 py-0.5 rounded text-xs w-12 text-center">NH</span>
-                                                <span className="text-slate-700"><span className="font-bold text-red-500">壓力區</span>：當沖多單獲利點，或嘗試短空。</span>
+                                            <div className="flex items-center gap-3 p-2 rounded hover:bg-slate-800">
+                                                <span className="font-bold border border-red-900 text-red-400 px-2 py-0.5 rounded text-xs w-12 text-center bg-slate-950">NH</span>
+                                                <span className="text-slate-300"><span className="font-bold text-red-400">壓力區</span>：當沖多單獲利點，或嘗試短空。</span>
                                             </div>
-                                            <div className="flex items-center gap-3 p-2 rounded hover:bg-slate-50">
-                                                <span className="font-bold bg-slate-800 text-yellow-400 px-2 py-0.5 rounded text-xs w-12 text-center">CDP</span>
-                                                <span className="text-slate-700"><span className="font-bold text-slate-900">多空分界</span>：之上偏多，之下偏空。</span>
+                                            <div className="flex items-center gap-3 p-2 rounded hover:bg-slate-800">
+                                                <span className="font-bold bg-black text-yellow-400 px-2 py-0.5 rounded text-xs w-12 text-center border border-slate-700">CDP</span>
+                                                <span className="text-slate-300"><span className="font-bold text-white">多空分界</span>：之上偏多，之下偏空。</span>
                                             </div>
-                                            <div className="flex items-center gap-3 p-2 rounded hover:bg-slate-50">
-                                                <span className="font-bold border border-green-500 text-green-600 px-2 py-0.5 rounded text-xs w-12 text-center">NL</span>
-                                                <span className="text-slate-700"><span className="font-bold text-green-500">支撐區</span>：當沖空單回補點，或嘗試低接。</span>
+                                            <div className="flex items-center gap-3 p-2 rounded hover:bg-slate-800">
+                                                <span className="font-bold border border-green-900 text-green-400 px-2 py-0.5 rounded text-xs w-12 text-center bg-slate-950">NL</span>
+                                                <span className="text-slate-300"><span className="font-bold text-green-400">支撐區</span>：當沖空單回補點，或嘗試低接。</span>
                                             </div>
-                                            <div className="flex items-center gap-3 p-2 rounded hover:bg-slate-50">
+                                            <div className="flex items-center gap-3 p-2 rounded hover:bg-slate-800">
                                                 <span className="font-bold bg-green-600 text-white px-2 py-0.5 rounded text-xs w-12 text-center">AL</span>
-                                                <span className="text-slate-700"><span className="font-bold text-green-600">最弱勢</span>：跌破追空，行情極弱。</span>
+                                                <span className="text-slate-300"><span className="font-bold text-green-500">最弱勢</span>：跌破追空，行情極弱。</span>
                                             </div>
                                         </div>
                                     </section>
                                     <section>
-                                        <h3 className="font-black text-indigo-900 mb-3 text-lg flex items-center gap-2">
-                                            <span className="bg-indigo-100 text-indigo-600 w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span>
+                                        <h3 className="font-black text-indigo-400 mb-3 text-lg flex items-center gap-2">
+                                            <span className="bg-indigo-900/50 text-indigo-300 w-6 h-6 rounded-full flex items-center justify-center text-xs border border-indigo-700">3</span>
                                             盤中應戰
                                         </h3>
-                                        <p className="text-slate-600 mb-3 pl-8">
-                                            輸入 <span className="font-bold text-indigo-600">「今日開盤價」</span>，系統自動判斷策略：
+                                        <p className="text-slate-400 mb-3 pl-8">
+                                            輸入 <span className="font-bold text-indigo-400">「今日開盤價」</span>，系統自動判斷策略：
                                         </p>
                                         <div className="grid grid-cols-2 gap-3 ml-8 text-sm">
-                                            <div className="bg-gradient-to-br from-red-50 to-white p-3 rounded-xl border border-red-100 shadow-sm">
-                                                <div className="font-bold text-red-700 mb-1">🔴 超強勢 (開 {'>'} AH)</div>
+                                            <div className="bg-gradient-to-br from-red-950/50 to-slate-900 p-3 rounded-xl border border-red-900/50 shadow-sm">
+                                                <div className="font-bold text-red-400 mb-1">🔴 超強勢 (開 {'>'} AH)</div>
                                                 <div className="text-xs text-slate-500">順勢追多，拉回不破 AH 上車。</div>
                                             </div>
-                                            <div className="bg-gradient-to-br from-blue-50 to-white p-3 rounded-xl border border-blue-100 shadow-sm">
-                                                <div className="font-bold text-blue-700 mb-1">🔵 震盪盤 (NL ~ NH)</div>
+                                            <div className="bg-gradient-to-br from-blue-950/50 to-slate-900 p-3 rounded-xl border border-blue-900/50 shadow-sm">
+                                                <div className="font-bold text-blue-400 mb-1">🔵 震盪盤 (NL ~ NH)</div>
                                                 <div className="text-xs text-slate-500">逆勢操作，高出低進。</div>
                                             </div>
-                                            <div className="bg-gradient-to-br from-green-50 to-white p-3 rounded-xl border border-green-100 shadow-sm">
-                                                <div className="font-bold text-green-700 mb-1">🟢 超弱勢 (開 {'<'} AL)</div>
+                                            <div className="bg-gradient-to-br from-green-950/50 to-slate-900 p-3 rounded-xl border border-green-900/50 shadow-sm">
+                                                <div className="font-bold text-green-400 mb-1">🟢 超弱勢 (開 {'<'} AL)</div>
                                                 <div className="text-xs text-slate-500">順勢追空，反彈不過 AL 下車。</div>
                                             </div>
                                         </div>
                                     </section>
                                 </div>
-                                <div className="bg-slate-50 p-5 border-t border-slate-200 flex justify-end">
+                                <div className="bg-slate-900 p-5 border-t border-slate-800 flex justify-end">
                                     <button 
                                         onClick={() => setShowManual(false)}
-                                        className="bg-indigo-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-indigo-800 transition-colors shadow-lg shadow-indigo-200"
+                                        className="bg-indigo-700 text-white px-8 py-3 rounded-xl font-bold hover:bg-indigo-600 transition-colors shadow-lg shadow-indigo-900/50"
                                     >
                                         我學會了
                                     </button>

@@ -74,6 +74,7 @@
         const Info = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></IconBase>;
         const Crosshair = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10"></circle><line x1="22" y1="12" x2="18" y2="12"></line><line x1="6" y1="12" x2="2" y2="12"></line><line x1="12" y1="6" x2="12" y2="2"></line><line x1="12" y1="22" x2="12" y2="18"></line></IconBase>;
         const List = (props) => <IconBase {...props}><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></IconBase>;
+        const Target = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></IconBase>;
 
         // -----------------------------------------------------------
 
@@ -136,6 +137,80 @@
             );
         };
 
+        // 新增組件：盤前預測分析卡片 (Pre-market Prediction)
+        const PremarketPrediction = ({ closePrice, results }) => {
+            if (!results || !closePrice) return null;
+
+            const c = parseFloat(closePrice);
+            const { ah, nh, cdp, nl, al } = results;
+            let sentiment = {};
+
+            if (c > parseFloat(ah)) {
+                sentiment = {
+                    title: '🚀 極度強勢 (Super Bullish)',
+                    desc: '收盤價突破 AH，主力控盤意願極強。',
+                    action: `明日開盤易直接開高，觀察是否守穩 AH (${ah})，若開太高需防獲利了結賣壓。`,
+                    color: 'bg-gradient-to-r from-purple-600 to-pink-600',
+                    textColor: 'text-white'
+                };
+            } else if (c > parseFloat(nh)) {
+                sentiment = {
+                    title: '📈 強勢整理 (Bullish)',
+                    desc: '收盤價站上 NH 壓力，多頭佔優。',
+                    action: `明日開盤預期偏強，重點觀察 NH (${nh}) 支撐是否守穩，不破則續攻。`,
+                    color: 'bg-red-50 border-l-4 border-red-500',
+                    textColor: 'text-red-900'
+                };
+            } else if (c > parseFloat(cdp)) {
+                sentiment = {
+                    title: '🐂 偏多震盪 (Mildly Bullish)',
+                    desc: '收盤價在 CDP 之上，多方防守成功。',
+                    action: `預期明日開在平盤或 CDP (${cdp}) 附近，觀察 CDP 支撐力道。`,
+                    color: 'bg-orange-50 border-l-4 border-orange-400',
+                    textColor: 'text-orange-900'
+                };
+            } else if (c >= parseFloat(nl)) {
+                sentiment = {
+                    title: '🐻 偏空震盪 (Mildly Bearish)',
+                    desc: '收盤價落在 CDP 之下，空方略佔優勢。',
+                    action: `預期明日開在平盤或微低，上方 CDP (${cdp}) 為反壓，需防守 NL (${nl})。`,
+                    color: 'bg-blue-50 border-l-4 border-blue-400',
+                    textColor: 'text-blue-900'
+                };
+            } else if (c >= parseFloat(al)) {
+                sentiment = {
+                    title: '📉 弱勢探底 (Bearish)',
+                    desc: '收盤價落入支撐區間邊緣，空頭力道增強。',
+                    action: `明日易開低，重點觀察 NL (${nl}) 能否站回，否則恐測 AL (${al})。`,
+                    color: 'bg-green-50 border-l-4 border-green-500',
+                    textColor: 'text-green-900'
+                };
+            } else {
+                sentiment = {
+                    title: '☠️ 極度弱勢 (Super Bearish)',
+                    desc: '收盤價跌破 AL，籌碼潰散。',
+                    action: `明日易直接開低或跳空，反彈不過 AL (${al}) 皆為空點。`,
+                    color: 'bg-gradient-to-r from-green-800 to-teal-900',
+                    textColor: 'text-white'
+                };
+            }
+
+            return (
+                <div className={`p-4 rounded-xl shadow-md mb-4 ${sentiment.color} ${sentiment.textColor} transition-all duration-500 animate-fade-in`}>
+                    <div className="flex items-center gap-2 mb-2">
+                        <Target size={20} className={sentiment.textColor.includes('text-white') ? 'text-yellow-300' : 'text-current'} />
+                        <h3 className="font-bold text-lg">明日開盤預測分析</h3>
+                    </div>
+                    <div className="font-bold text-xl mb-1">{sentiment.title}</div>
+                    <p className="text-sm opacity-90 mb-3">{sentiment.desc}</p>
+                    <div className={`text-sm p-3 rounded-lg font-bold flex gap-2 items-start ${sentiment.textColor.includes('text-white') ? 'bg-white/20' : 'bg-white/60'}`}>
+                        <span className="shrink-0 mt-0.5">👉</span>
+                        <span>{sentiment.action}</span>
+                    </div>
+                </div>
+            );
+        };
+
         // 新增組件：盤前情境模擬列表
         const ScenarioSimulation = ({ results }) => {
             const [copied, setCopied] = useState(false);
@@ -143,11 +218,11 @@
 
             const handleCopyScenarios = () => {
                 let text = `【隔日開盤模擬劇本】\n`;
-                text += `1. 🔴超強勢 (開 > ${results.ah}): 回檔不破 AH/NH 順勢做多\n`;
-                text += `2. 🟠偏強勢 (${results.nh} < 開 ≤ ${results.ah}): 站穩 NH 做多，跌破 NH 短空\n`;
-                text += `3. 🔵震盪盤 (${results.nl} ≤ 開 ≤ ${results.nh}): 區間操作，近 NH 賣，近 NL 買\n`;
-                text += `4. 🟢偏弱勢 (${results.al} ≤ 開 < ${results.nl}): 反彈不過 NL 做空，跌破 AL 追空\n`;
-                text += `5. 🟢超弱勢 (開 < ${results.al}): 反彈不過 AL/NL 順勢做空\n`;
+                text += `1. 🔴超強勢 (開 > ${results.ah}): 回檔不破 AH ${results.ah} 順勢做多\n`;
+                text += `2. 🟠偏強勢 (${results.nh} < 開 ≤ ${results.ah}): 站穩 NH ${results.nh} 做多，跌破 NH 短空\n`;
+                text += `3. 🔵震盪盤 (${results.nl} ≤ 開 ≤ ${results.nh}): 區間操作，近 NH ${results.nh} 賣，近 NL ${results.nl} 買\n`;
+                text += `4. 🟢偏弱勢 (${results.al} ≤ 開 < ${results.nl}): 反彈不過 NL ${results.nl} 做空，跌破 AL ${results.al} 追空\n`;
+                text += `5. 🟢超弱勢 (開 < ${results.al}): 反彈不過 AL ${results.al} 順勢做空\n`;
 
                 const textArea = document.createElement("textarea");
                 textArea.value = text;
@@ -167,31 +242,31 @@
                 {
                 condition: `開盤 > ${results.ah}`,
                 title: '超強勢 (追買)',
-                action: '回檔不破 AH/NH 順勢做多',
+                action: `回檔不破 AH ${results.ah} 順勢做多`,
                 bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', icon: '🔴'
                 },
                 {
                 condition: `${results.nh} < 開盤 ≤ ${results.ah}`,
                 title: '偏強勢 (觀察)',
-                action: '站穩 NH 做多，跌破 NH 短空',
+                action: `站穩 NH ${results.nh} 做多，跌破 NH 短空`,
                 bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', icon: '🟠'
                 },
                 {
                 condition: `${results.nl} ≤ 開盤 ≤ ${results.nh}`,
                 title: '震盪盤整 (逆勢)',
-                action: '區間操作：近 NH 賣，近 NL 買',
+                action: `區間操作：近 NH ${results.nh} 賣，近 NL ${results.nl} 買`,
                 bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', icon: '🔵'
                 },
                 {
                 condition: `${results.al} ≤ 開盤 < ${results.nl}`,
                 title: '偏弱勢 (觀察)',
-                action: '反彈不過 NL 做空，跌破 AL 追空',
+                action: `反彈不過 NL ${results.nl} 做空，跌破 AL ${results.al} 追空`,
                 bg: 'bg-teal-50', border: 'border-teal-200', text: 'text-teal-700', icon: '🟢'
                 },
                 {
                 condition: `開盤 < ${results.al}`,
                 title: '超弱勢 (追空)',
-                action: '反彈不過 AL/NL 順勢做空',
+                action: `反彈不過 AL ${results.al} 順勢做空`,
                 bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-800', icon: '🟢'
                 }
             ];
@@ -385,12 +460,22 @@
                 text += `開盤SOP: ${strategy.sop}\n`;
                 if (strategy.action) text += `操作建議: ${strategy.action}\n`;
                 } else {
+                text += `\n【明日開盤預測】\n`;
+                // Add prediction text based on current inputs
+                const c = parseFloat(inputs.close);
+                if (c > parseFloat(results.ah)) text += `狀態: 極度強勢 (破 AH)\n建議: 明日易開高，防獲利賣壓\n`;
+                else if (c > parseFloat(results.nh)) text += `狀態: 強勢整理 (站上 NH)\n建議: 明日觀察 NH 支撐\n`;
+                else if (c > parseFloat(results.cdp)) text += `狀態: 偏多震盪 (CDP 之上)\n建議: 明日 CDP 附近震盪\n`;
+                else if (c >= parseFloat(results.nl)) text += `狀態: 偏空震盪 (CDP 之下)\n建議: 明日需防守 NL\n`;
+                else if (c >= parseFloat(results.al)) text += `狀態: 弱勢探底 (NL 邊緣)\n建議: 明日易開低\n`;
+                else text += `狀態: 極度弱勢 (破 AL)\n建議: 明日易有低點\n`;
+
                 text += `\n【隔日開盤模擬劇本】\n`;
-                text += `1. 🔴超強勢 (開 > ${results.ah}): 回檔不破 AH/NH 順勢做多\n`;
-                text += `2. 🟠偏強勢 (${results.nh} < 開 ≤ ${results.ah}): 站穩 NH 做多，跌破 NH 短空\n`;
-                text += `3. 🔵震盪盤 (${results.nl} ≤ 開 ≤ ${results.nh}): 區間操作，近 NH 賣，近 NL 買\n`;
-                text += `4. 🟢偏弱勢 (${results.al} ≤ 開 < ${results.nl}): 反彈不過 NL 做空，跌破 AL 追空\n`;
-                text += `5. 🟢超弱勢 (開 < ${results.al}): 反彈不過 AL/NL 順勢做空\n`;
+                text += `1. 🔴超強勢 (開 > ${results.ah}): 回檔不破 AH ${results.ah} 順勢做多\n`;
+                text += `2. 🟠偏強勢 (${results.nh} < 開 ≤ ${results.ah}): 站穩 NH ${results.nh} 做多，跌破 NH 短空\n`;
+                text += `3. 🔵震盪盤 (${results.nl} ≤ 開 ≤ ${results.nh}): 區間操作，近 NH ${results.nh} 賣，近 NL ${results.nl} 買\n`;
+                text += `4. 🟢偏弱勢 (${results.al} ≤ 開 < ${results.nl}): 反彈不過 NL ${results.nl} 做空，跌破 AL ${results.al} 追空\n`;
+                text += `5. 🟢超弱勢 (開 < ${results.al}): 反彈不過 AL ${results.al} 順勢做空\n`;
                 text += `\n(請依實際開盤價位，執行對應劇本)\n`;
                 }
                 
@@ -470,6 +555,13 @@
                     al: al.toFixed(2),
                     range: range.toFixed(2)
                 });
+                
+                // 為了方便在下方使用，這裡先暫存 formatted string
+                const ahStr = ah.toFixed(2);
+                const nhStr = nh.toFixed(2);
+                const cdpStr = cdpVal.toFixed(2);
+                const nlStr = nl.toFixed(2);
+                const alStr = al.toFixed(2);
 
                 const volPercent = (range / c) * 100;
                 let volStatus = 'normal';
@@ -507,8 +599,8 @@
                     strat = {
                         title: '超強勢盤 (追買)',
                         desc: '跳空突破 AH 壓力，行情極強。',
-                        action: '回檔不破 AH/NH 順勢做多，勿放空。',
-                        sop: '開盤後等待第一波回測，若不破開盤價或 AH，可進場做多，停損設 AH 下方。',
+                        action: `回檔不破 AH (${ahStr}) / NH (${nhStr}) 順勢做多，勿放空。`,
+                        sop: `開盤後等待第一波回測，若不破開盤價或 AH (${ahStr})，可進場做多，停損設 AH (${ahStr}) 下方。`,
                         color: 'from-red-600 to-orange-600 text-white shadow-red-200',
                         icon: <TrendingUp className="w-8 h-8 text-white" />
                     };
@@ -516,8 +608,8 @@
                     strat = {
                         title: '偏強勢盤 (觀察)',
                         desc: '開在壓力區間，上方有 AH 壓力。',
-                        action: '站穩 NH 做多，跌破 NH 則短空。',
-                        sop: '觀察開盤能否站穩 NH，站穩則目標看 AH；若跌破開盤價或 NH，則可能回測 CDP。',
+                        action: `站穩 NH (${nhStr}) 做多，跌破 NH (${nhStr}) 則短空。`,
+                        sop: `觀察開盤能否站穩 NH (${nhStr})，站穩則目標看 AH (${ahStr})；若跌破開盤價或 NH (${nhStr})，則可能回測 CDP (${cdpStr})。`,
                         color: 'from-orange-400 to-amber-500 text-white',
                         icon: <TrendingUp className="w-8 h-8 text-white" />
                     };
@@ -525,8 +617,8 @@
                     strat = {
                         title: '震盪盤整 (逆勢)',
                         desc: '開在 CDP 中軸附近，標準盤整。',
-                        action: '區間操作：接近 NH 賣，接近 NL 買。',
-                        sop: '不追高殺低。等待價格來到 NH 附近出現上影線做空，或來到 NL 附近出現下影線做多。',
+                        action: `區間操作：接近 NH (${nhStr}) 賣，接近 NL (${nlStr}) 買。`,
+                        sop: `不追高殺低。等待價格來到 NH (${nhStr}) 附近出現上影線做空，或來到 NL (${nlStr}) 附近出現下影線做多。`,
                         color: 'from-blue-500 to-indigo-600 text-white',
                         icon: <Activity className="w-8 h-8 text-white" />
                     };
@@ -534,8 +626,8 @@
                     strat = {
                         title: '偏弱勢盤 (觀察)',
                         desc: '開在支撐區間，空方力道強。',
-                        action: '反彈不過 NL 做空，跌破 AL 追空。',
-                        sop: '觀察開盤是否跌破 NL，反彈測試 NL 不過可空；若站上 NL 則暫時觀望，目標看 CDP。',
+                        action: `反彈不過 NL (${nlStr}) 做空，跌破 AL (${alStr}) 追空。`,
+                        sop: `觀察開盤是否跌破 NL (${nlStr})，反彈測試 NL (${nlStr}) 不過可空；若站上 NL (${nlStr}) 則暫時觀望，目標看 CDP (${cdpStr})。`,
                         color: 'from-teal-500 to-emerald-600 text-white',
                         icon: <TrendingDown className="w-8 h-8 text-white" />
                     };
@@ -543,8 +635,8 @@
                     strat = {
                         title: '超弱勢盤 (追空)',
                         desc: '跳空跌破 AL 支撐，行情極弱。',
-                        action: '反彈不過 AL/NL 順勢做空，勿摸底。',
-                        sop: '開盤後等待反彈測試 AL，若不過 AL 或開盤價，可進場放空，停損設 AL 上方。',
+                        action: `反彈不過 AL (${alStr}) / NL (${nlStr}) 順勢做空，勿摸底。`,
+                        sop: `開盤後等待反彈測試 AL (${alStr})，若不過 AL (${alStr}) 或開盤價，可進場放空，停損設 AL (${alStr}) 上方。`,
                         color: 'from-green-700 to-emerald-800 text-white',
                         icon: <TrendingDown className="w-8 h-8 text-white" />
                     };
@@ -815,8 +907,11 @@
                         ) : (
                         <div className="space-y-6 h-full">
                             
+                            {/* 明日開盤預測 (Pre-market Prediction) - 只在尚未輸入今日開盤價時顯示 */}
+                            {!strategy && <PremarketPrediction closePrice={inputs.close} results={results} />}
+
                             {strategy ? (
-                            // 單一策略模式 - 強化視覺
+                            // 單一策略模式 - 強化視覺 (當日盤中/盤後)
                             <div className={`p-6 rounded-2xl shadow-xl bg-gradient-to-br ${strategy.color} text-white relative overflow-hidden group`}>
                                 {/* 背景裝飾 */}
                                 <div className="absolute top-0 right-0 p-4 opacity-10 transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform duration-500">
@@ -850,7 +945,7 @@
                                 </div>
                             </div>
                             ) : (
-                            // 模擬劇本模式
+                            // 模擬劇本模式 (當日盤前)
                             <ScenarioSimulation results={results} />
                             )}
 
